@@ -1,0 +1,10 @@
+{
+  "description": "Streamlines product engineering workflows with role-specific dashboards for PMs, engineers, and QA, enhancing focus and collaboration within a unified platform.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
