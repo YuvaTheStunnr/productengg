@@ -2,17 +2,17 @@ import { useState } from 'react'
 import {
   INITIATIVES, IDEAS, RELEASES, epicsForInitiative, initiativeHealth, initiativePct, releaseHealth,
 } from './data'
-import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, Breadcrumb, SidebarShell, WorkspaceShell, Btn, Divider, Tag } from './ui'
+import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, Breadcrumb, SidebarShell, WorkspaceShell, Btn, Tag } from './ui'
 import {
   IdeaDetail, CreateIdea, InitiativeDetail, CreateInitiative, ReleaseDetail, type Nav,
 } from './entities'
+import { PlanningWorkspace } from './PlanningWorkspace'
 
 type Screen =
   | 'dashboard'
   | 'idea-list' | 'idea-detail' | 'create-idea'
   | 'initiative-list' | 'initiative-detail' | 'create-initiative'
-  | 'planning-calendar' | 'release-detail'
-  | 'reports'
+  | 'planning' | 'release-detail'
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
@@ -24,9 +24,7 @@ function Sidebar({ nav, navigate }: { nav: Screen; navigate: (s: Screen) => void
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'idea-list', label: 'Ideas', badge: openIdeas || undefined },
         { id: 'initiative-list', label: 'Initiatives' },
-        { id: 'planning-calendar', label: 'Planning Calendar' },
-        { id: 'reports', label: 'Reports' },
-        { id: 'create-initiative', label: '+ New Initiative', action: true } as any,
+        { id: 'planning', label: 'Planning' },
       ]}
       nav={nav}
       navigate={navigate}
@@ -137,7 +135,6 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
               Portfolio delivery confidence is <span className="font-semibold text-[#333]">{avgConfidence}%</span> across {INITIATIVES.length} initiatives. {needsAttention.length} need attention — recommend a review focused on unblocking the highest-severity risks before the next milestone window.
             </p>
             <div className="mt-3 pt-3 border-t border-[#EBEBEB] flex gap-2">
-              <Btn small onClick={() => navigate('reports')}>View Full Report</Btn>
               <Btn variant="primary" small>Schedule Review</Btn>
             </div>
           </CardShell>
@@ -156,6 +153,34 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
             ))}
           </CardShell>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mt-4">
+        <CardShell>
+          <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0]"><span className="text-[12px] font-semibold text-[#333]">Initiatives by Health</span></div>
+          {(['On Track', 'Blocked', 'Overdue', 'Not Started', 'Completed'] as const).map(h => {
+            const count = INITIATIVES.filter(i => initiativeHealth(i) === h).length
+            return (
+              <div key={h} className="px-4 py-3 border-b border-[#F5F5F5] last:border-0 flex items-center gap-3">
+                <span className="text-[11.5px] text-[#555] w-28 flex-shrink-0">{h}</span>
+                <div className="flex-1"><ProgressBar pct={INITIATIVES.length ? Math.round(count / INITIATIVES.length * 100) : 0} /></div>
+                <span className="text-[11px] text-[#888] w-6 text-right">{count}</span>
+              </div>
+            )
+          })}
+        </CardShell>
+        <CardShell className="p-4">
+          <SectionLabel>Delivery by Initiative</SectionLabel>
+          {INITIATIVES.map(init => (
+            <div key={init.id} className="py-1.5">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-[#555] truncate mr-2">{init.title}</span>
+                <span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span>
+              </div>
+              <ProgressBar pct={initiativePct(init)} thin />
+            </div>
+          ))}
+        </CardShell>
       </div>
     </WorkspaceShell>
   )
@@ -263,141 +288,6 @@ function InitiativeList({ navigate }: { navigate: (s: Screen, id?: string) => vo
   )
 }
 
-// ─── Planning Calendar ────────────────────────────────────────────────────────
-
-function PlanningCalendar({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
-  const months = ['Jul 2026', 'Aug 2026', 'Sep 2026', 'Oct 2026', 'Nov 2026', 'Dec 2026']
-  const bars = INITIATIVES.map((init, i) => ({ init, start: i * 0.4, end: Math.min(5.9, i * 0.4 + 2.6), health: initiativeHealth(init) }))
-  const milestones = [
-    { label: 'v2.4.1 Beta', month: 1.4 },
-    { label: 'v2.4.1 GA', month: 1.9 },
-    { label: 'v3.0', month: 2.9 },
-  ]
-
-  return (
-    <WorkspaceShell title="Planning Calendar" subtitle="Q3–Q4 2026 initiative timeline and milestones — cross-product view">
-      <div className="bg-white border border-[#E4E4E4] rounded-md overflow-hidden mb-5">
-        <div className="grid border-b border-[#E4E4E4]" style={{ gridTemplateColumns: '160px repeat(6, 1fr)' }}>
-          <div className="px-4 py-3 border-r border-[#E4E4E4] bg-[#FAFAFA]" />
-          {months.map(m => (
-            <div key={m} className="px-3 py-3 text-[11px] font-semibold text-[#888] border-r border-[#E4E4E4] last:border-0 text-center uppercase tracking-wider">{m}</div>
-          ))}
-        </div>
-
-        <div className="grid border-b border-[#F0F0F0] bg-[#FAFAFA]" style={{ gridTemplateColumns: '160px 1fr' }}>
-          <div className="px-4 py-2 border-r border-[#E4E4E4] text-[10px] font-semibold text-[#AAAAAA] uppercase tracking-wider flex items-center">Milestones</div>
-          <div className="relative h-8">
-            {milestones.map(m => (
-              <div key={m.label} className="absolute flex flex-col items-center" style={{ left: `${(m.month / 6) * 100}%` }}>
-                <div className="w-px h-3 bg-[#888] mt-1" />
-                <div className="w-2 h-2 bg-[#888] rotate-45 -mt-1" />
-                <span className="text-[9px] text-[#555] whitespace-nowrap mt-1 -translate-x-1/2">{m.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {bars.map((bar, i) => (
-          <div key={i} className="grid border-b border-[#F5F5F5] last:border-0 items-center" style={{ gridTemplateColumns: '160px 1fr' }}>
-            <div className="px-4 py-3 border-r border-[#E4E4E4] text-[11.5px] font-medium text-[#444] truncate">{bar.init.title}</div>
-            <div className="relative h-10 px-2 flex items-center">
-              <div className="absolute inset-x-0 flex">
-                {Array.from({ length: 6 }, (_, j) => <div key={j} className="flex-1 h-10 border-r border-[#F5F5F5] last:border-0" />)}
-              </div>
-              <div
-                onClick={() => navigate('initiative-detail', bar.init.id)}
-                className={`absolute h-5 rounded flex items-center px-2 text-[10px] font-medium cursor-pointer
-                  ${bar.health === 'Blocked' ? 'bg-[#F5E8E8] border border-[#E8CCCC] text-[#CC4444]'
-                  : bar.health === 'Overdue' ? 'bg-[#1A1A1A] border border-[#1A1A1A] text-white'
-                  : bar.health === 'Not Started' ? 'bg-[#F5F5F5] border border-dashed border-[#CCCCCC] text-[#AAAAAA]'
-                  : 'bg-[#EBEBEB] border border-[#D8D8D8] text-[#555]'}`}
-                style={{ left: `${(bar.start / 6) * 100}%`, width: `${((bar.end - bar.start) / 6) * 100}%` }}
-              >
-                <span className="truncate">{bar.init.title}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-[1fr_280px] gap-4">
-        <CardShell className="p-4">
-          <SectionLabel>Release Schedule</SectionLabel>
-          {RELEASES.map(rel => (
-            <div key={rel.id} onClick={() => navigate('release-detail', rel.id)} className="flex items-start justify-between py-3 border-b border-[#F5F5F5] last:border-0 cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4">
-              <div>
-                <p className="text-[13px] font-semibold text-[#1A1A1A]">{rel.name}</p>
-                <p className="text-[11px] text-[#888] mt-1">{rel.description}</p>
-              </div>
-              <div className="text-right flex-shrink-0 ml-4">
-                <p className="text-[12px] font-medium text-[#333]">{rel.targetDate}</p>
-                <div className="mt-1"><StatusPair workflow={rel.workflowState} health={releaseHealth(rel)} /></div>
-                <p className="text-[10px] text-[#BBBBBB] mt-1">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} gates</p>
-              </div>
-            </div>
-          ))}
-        </CardShell>
-        <CardShell className="p-4">
-          <SectionLabel>Legend</SectionLabel>
-          {[
-            { label: 'On Track', style: 'bg-[#EBEBEB] border border-[#D8D8D8]' },
-            { label: 'Blocked', style: 'bg-[#F5E8E8] border border-[#E8CCCC]' },
-            { label: 'Overdue', style: 'bg-[#1A1A1A] border border-[#1A1A1A]' },
-            { label: 'Not Started', style: 'bg-[#F5F5F5] border border-dashed border-[#CCCCCC]' },
-          ].map(l => (
-            <div key={l.label} className="flex items-center gap-3 py-1.5">
-              <div className={`w-8 h-3 rounded ${l.style}`} />
-              <span className="text-[11.5px] text-[#555]">{l.label}</span>
-            </div>
-          ))}
-          <Divider className="my-2" />
-          <div className="flex items-center gap-3 py-1.5">
-            <div className="flex items-center gap-1"><div className="w-px h-4 bg-[#888]" /><div className="w-2 h-2 bg-[#888] rotate-45 -ml-1" /></div>
-            <span className="text-[11.5px] text-[#555]">Release Milestone</span>
-          </div>
-        </CardShell>
-      </div>
-    </WorkspaceShell>
-  )
-}
-
-// ─── Reports ────────────────────────────────────────────────────────────────
-
-function Reports() {
-  const byHealth = ['On Track', 'Blocked', 'Overdue', 'Not Started', 'Completed'] as const
-  return (
-    <WorkspaceShell title="Reports" subtitle="Portfolio-level rollups across all products">
-      <div className="grid grid-cols-[1fr_320px] gap-4">
-        <CardShell>
-          <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0]"><span className="text-[12px] font-semibold text-[#333]">Initiatives by Health</span></div>
-          {byHealth.map(h => {
-            const count = INITIATIVES.filter(i => initiativeHealth(i) === h).length
-            return (
-              <div key={h} className="px-4 py-3 border-b border-[#F5F5F5] last:border-0 flex items-center gap-3">
-                <span className="text-[11.5px] text-[#555] w-28 flex-shrink-0">{h}</span>
-                <div className="flex-1"><ProgressBar pct={INITIATIVES.length ? Math.round(count / INITIATIVES.length * 100) : 0} /></div>
-                <span className="text-[11px] text-[#888] w-6 text-right">{count}</span>
-              </div>
-            )
-          })}
-        </CardShell>
-        <CardShell className="p-4">
-          <SectionLabel>Delivery by Initiative</SectionLabel>
-          {INITIATIVES.map(init => (
-            <div key={init.id} className="py-1.5">
-              <div className="flex items-center justify-between text-[11px] mb-1">
-                <span className="text-[#555] truncate mr-2">{init.title}</span>
-                <span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span>
-              </div>
-              <ProgressBar pct={initiativePct(init)} thin />
-            </div>
-          ))}
-        </CardShell>
-      </div>
-    </WorkspaceShell>
-  )
-}
-
 // ─── Space Root ────────────────────────────────────────────────────────────────
 
 export type LeadershipNav = { screen: Screen; id?: string }
@@ -416,9 +306,8 @@ export function LeadershipSpace({ onContextChange }: { onContextChange: (ctx: { 
       'initiative-list': { title: 'Initiatives', prompts: ['Compare initiative progress', 'Identify at-risk initiatives', 'Export summary for board', 'Suggest reprioritisation'] },
       'initiative-detail': { title: 'Initiative Detail', prompts: ['Summarize this initiative', 'Predict delivery date', 'Generate stakeholder update', 'Identify top risks'] },
       'create-initiative': { title: 'New Initiative', prompts: ['Help write a business goal', 'Suggest success metrics', 'Draft initiative brief', 'Estimate timeline'] },
-      'planning-calendar': { title: 'Planning Calendar', prompts: ['Identify scheduling conflicts', 'Optimise release dates', 'Show Q3 milestones', 'Summarise upcoming deadlines'] },
+      'planning': { title: 'Planning', prompts: ['Identify scheduling conflicts', 'Optimise release dates', 'Show Q3 milestones', 'Which ideas are ready to convert?'] },
       'release-detail': { title: 'Release Detail', prompts: ['Summarise release readiness', 'What is blocking this release?'] },
-      'reports': { title: 'Reports', prompts: ['Summarise portfolio health', 'Draft board update', 'Compare products by delivery confidence'] },
     }
     onContextChange(ctx[screen])
   }
@@ -434,9 +323,8 @@ export function LeadershipSpace({ onContextChange }: { onContextChange: (ctx: { 
         {nav.screen === 'initiative-list' && <InitiativeList navigate={navigate} />}
         {nav.screen === 'initiative-detail' && <InitiativeDetail id={nav.id ?? INITIATIVES[0].id} nav={shared} role="leadership" />}
         {nav.screen === 'create-initiative' && <CreateInitiative nav={shared} role="leadership" />}
-        {nav.screen === 'planning-calendar' && <PlanningCalendar navigate={navigate} />}
+        {nav.screen === 'planning' && <PlanningWorkspace navigate={(s, id) => navigate(s as Screen, id)} />}
         {nav.screen === 'release-detail' && <ReleaseDetail id={nav.id ?? RELEASES[0].id} nav={shared} role="leadership" />}
-        {nav.screen === 'reports' && <Reports />}
       </main>
     </div>
   )

@@ -11,13 +11,18 @@
 
 import { useState } from 'react'
 import {
-  PRODUCTS, TEAMS, IDEAS, CUSTOMER_REQUESTS, ACCOUNTS, INITIATIVES, EPICS, STORIES, TASKS, BUGS, TEST_CASES, RELEASES, CYCLES,
-  getIdea, getCustomerRequest, getAccount, getInitiative, getEpic, getStory, getTask, getBug, getTestCase, getRelease, getProduct, getCycle,
+  PRODUCTS, TEAMS, IDEAS, CUSTOMER_REQUESTS, ACCOUNTS, INITIATIVES, EPICS, STORIES, TASKS, BUGS, TEST_CASES, RELEASES, CYCLES, HOTFIXES,
+  RELEASE_GATE_LABELS,
+  getIdea, getCustomerRequest, getAccount, getInitiative, getEpic, getStory, getTask, getBug, getTestCase, getRelease, getProduct, getCycle, getHotfix,
   epicsForInitiative, storiesForEpic, tasksForStory, subtasksForTask, bugsForStory, testCasesForStory,
   ideasForInitiative, requestsForInitiative, initiativesForRequest, workflowTasksForSource,
   initiativeHealth, initiativePct, epicHealth, epicPct, storyHealth, storyPct, taskHealth, taskPct, releaseHealth, releasePct,
   customerFacingInitiativeUpdate, customerFacingReleaseStatus, requestStageNarrative,
-  type Idea, type CustomerRequest, type RequestStatus,
+  createIdea, createCustomerRequest, createInitiative, createEpic, createStory, createTask, createSubtask, createBug, createTestCase, createRelease, createHotfix,
+  moveCustomerRequestStage, setRequestInitiatives, planStoryIntoCycle, moveStoryToQA, approveStory, rejectStory, requestStoryClarification, raiseStoryBlocker,
+  markTaskDone, setTaskWorkflowState, markBugInFix, markBugFixed, markBugVerified, closeBugAsDuplicate, requestBugFix, setTestCaseStatus, updateNotes,
+  acknowledgeWorkflowTask, completeWorkflowTask, toggleGateCheck, approveRelease,
+  type Idea, type CustomerRequest, type RequestStatus, type Priority,
 } from './data'
 import {
   WorkflowBadge, HealthBadge, StatusPair, SeverityBadge, CardShell, SectionLabel, ProgressBar, Breadcrumb, WorkspaceShell,
@@ -71,7 +76,33 @@ function WorkflowLinkCard({ sourceType, sourceId }: { sourceType: 'Bug' | 'Story
         <span className="text-[12px] font-semibold text-[#333]">Workflow Orchestration</span>
         <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
       </div>
-      <WorkflowQueue tasks={tasks} />
+      <WorkflowQueue tasks={tasks} onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
+    </CardShell>
+  )
+}
+
+// Lightweight editable scratchpad shown on Epic/Story/Task — distinct from
+// Description (what it is) and Acceptance Criteria (how we know it's done).
+// Saves immediately on blur; there's no separate edit mode to keep this small.
+function NotesCard({ entity, canEdit }: { entity: { notes?: string }; canEdit: boolean }) {
+  const [draft, setDraft] = useState(entity.notes ?? '')
+  return (
+    <CardShell className="p-4">
+      <SectionLabel>Notes</SectionLabel>
+      {canEdit ? (
+        <textarea
+          rows={3}
+          value={draft}
+          placeholder="Context for the team — decisions, open questions, anything that doesn't belong in the description…"
+          className={textareaCls}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => updateNotes(entity, draft)}
+        />
+      ) : entity.notes ? (
+        <p className="text-[12.5px] text-[#333] leading-relaxed whitespace-pre-wrap">{entity.notes}</p>
+      ) : (
+        <p className="text-[11.5px] text-[#CCCCCC] italic py-1">No notes yet.</p>
+      )}
     </CardShell>
   )
 }
@@ -157,17 +188,33 @@ export function IdeaDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
   )
 }
 
+const roleDisplay: Record<Role, { name: string; label: string }> = {
+  leadership: { name: 'Jamie Okonkwo', label: 'Leadership' },
+  pm: { name: 'Alex Chen', label: 'PM' },
+  engineering: { name: 'Morgan Tse', label: 'Engineering' },
+  qa: { name: 'Dana Rao', label: 'QA' },
+  'customer-success': { name: 'Nina Patel', label: 'Customer Success' },
+}
+
 export function CreateIdea({ nav, role }: { nav: Nav; role: Role }) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const submit = () => {
+    if (!title.trim() || !description.trim()) return
+    const who = roleDisplay[role]
+    const idea = createIdea({ title, description, createdBy: who.name, createdByRole: who.label })
+    nav('idea-detail', idea.id)
+  }
   return (
     <WorkspaceShell title="New Idea" subtitle="Ideas are lightweight — capture the thought, decide on it later." actions={<Btn small onClick={() => nav('idea-list')}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Ideas', screen: 'idea-list' }, { label: 'New Idea' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Title" required><input placeholder="e.g. Offline mode for mobile app" className={inputCls} /></Field>
-            <Field label="Description" required><textarea rows={4} placeholder="What's the idea? What problem does it solve?" className={textareaCls} /></Field>
+            <Field label="Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Offline mode for mobile app" className={inputCls} /></Field>
+            <Field label="Description" required><textarea rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="What's the idea? What problem does it solve?" className={textareaCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav('idea-list')}>{role === 'leadership' ? 'Save Idea' : 'Save & Notify Leadership'}</Btn>
+              <Btn variant="primary" onClick={submit}>{role === 'leadership' ? 'Save Idea' : 'Save & Notify Leadership'}</Btn>
               <Btn variant="ghost" onClick={() => nav('idea-list')}>Cancel</Btn>
             </div>
           </div>
@@ -202,6 +249,12 @@ export function CustomerRequestDetail({ id, nav, role }: { id: string; nav: Nav;
   const linkedInitiatives = initiativesForRequest(req)
   const isCS = role === 'customer-success'
   const upcoming = nextStages[req.stage]
+  const [linking, setLinking] = useState(false)
+  const [selectedInitiatives, setSelectedInitiatives] = useState<string[]>(req.initiativeIds)
+
+  const openLinkPicker = () => { setSelectedInitiatives(req.initiativeIds); setLinking(true) }
+  const toggleInitiative = (iid: string) => setSelectedInitiatives(ids => ids.includes(iid) ? ids.filter(x => x !== iid) : [...ids, iid])
+  const confirmLink = () => { setRequestInitiatives(req.id, selectedInitiatives); setLinking(false) }
 
   return (
     <WorkspaceShell
@@ -215,7 +268,7 @@ export function CustomerRequestDetail({ id, nav, role }: { id: string; nav: Nav;
           </div>
         </div>
       }
-      actions={isCS && upcoming.length > 0 ? <>{upcoming.map(s => <Btn key={s} small variant={s === 'Rejected' ? 'outline' : 'primary'}>Move to {s}</Btn>)}</> : undefined}
+      actions={isCS && upcoming.length > 0 ? <>{upcoming.map(s => <Btn key={s} small variant={s === 'Rejected' ? 'outline' : 'primary'} onClick={() => moveCustomerRequestStage(req.id, s)}>Move to {s}</Btn>)}</> : undefined}
     >
       <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: req.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
@@ -247,12 +300,29 @@ export function CustomerRequestDetail({ id, nav, role }: { id: string; nav: Nav;
               <CardShell className="p-4">
                 <div className="flex items-center justify-between mb-2">
                   <SectionLabel>Linked Initiatives</SectionLabel>
-                  {isCS && req.stage !== 'New' && req.stage !== 'Under Review' && <Btn small variant="ghost" onClick={() => nav('initiative-list')}>Link</Btn>}
+                  {isCS && req.stage !== 'New' && req.stage !== 'Under Review' && <Btn small variant="ghost" onClick={linking ? () => setLinking(false) : openLinkPicker}>{linking ? 'Close' : 'Link'}</Btn>}
                 </div>
-                {linkedInitiatives.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-1">Not linked to an initiative yet.</p>}
-                {linkedInitiatives.map(init => (
+                {!linking && linkedInitiatives.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-1">Not linked to an initiative yet.</p>}
+                {!linking && linkedInitiatives.map(init => (
                   <RelationshipRow key={init.id} label={isCS ? 'Progress' : 'Initiative'} value={isCS ? customerFacingInitiativeUpdate(init) : init.title} onClick={isCS ? () => nav('initiative-detail', init.id) : undefined} />
                 ))}
+                {linking && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10.5px] text-[#AAAAAA]">A request can inform more than one initiative — select all that apply.</p>
+                    <div className="flex flex-col gap-1 max-h-52 overflow-y-auto">
+                      {INITIATIVES.map(init => (
+                        <label key={init.id} className="flex items-center gap-2.5 px-2.5 py-1.5 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
+                          <input type="checkbox" checked={selectedInitiatives.includes(init.id)} onChange={() => toggleInitiative(init.id)} className="accent-[#1A1A1A]" />
+                          <span className="text-[12px] text-[#333] truncate">{init.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Btn small variant="primary" onClick={confirmLink}>Link Selected ({selectedInitiatives.length})</Btn>
+                      <Btn small variant="ghost" onClick={() => setLinking(false)}>Cancel</Btn>
+                    </div>
+                  </div>
+                )}
               </CardShell>
             </div>
           </div>
@@ -265,27 +335,37 @@ export function CustomerRequestDetail({ id, nav, role }: { id: string; nav: Nav;
 }
 
 export function CreateCustomerRequest({ nav }: { nav: Nav }) {
+  const [title, setTitle] = useState('')
+  const [source, setSource] = useState<CustomerRequest['source']>('Customer Success')
+  const [priority, setPriority] = useState<Priority>('Medium')
+  const [accountId, setAccountId] = useState('')
+  const [description, setDescription] = useState('')
+  const submit = () => {
+    if (!title.trim() || !description.trim()) return
+    const req = createCustomerRequest({ title, description, source, priority, accountId: accountId || undefined, requestedBy: 'Nina Patel' })
+    nav('request-detail', req.id)
+  }
   return (
     <WorkspaceShell title="Log Customer Request" subtitle="Requests are captured on their own — linking to an initiative is a separate decision made once a plan exists." actions={<Btn small onClick={() => nav('request-list')}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Customer Requests', screen: 'request-list' }, { label: 'New Request' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Title" required><input placeholder="e.g. Enterprise SSO requirement" className={inputCls} /></Field>
+            <Field label="Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Enterprise SSO requirement" className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Source" required>
-                <select className={selectCls}><option>Customer Success</option><option>Sales</option><option>Support</option></select>
+                <select value={source} onChange={e => setSource(e.target.value as CustomerRequest['source'])} className={selectCls}><option>Customer Success</option><option>Sales</option><option>Support</option></select>
               </Field>
               <Field label="Priority">
-                <select className={selectCls}><option>Critical</option><option>High</option><option selected>Medium</option><option>Low</option></select>
+                <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={selectCls}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select>
               </Field>
             </div>
             <Field label="Account" hint="Leave blank for requests that aren't tied to one specific account.">
-              <select className={selectCls}><option>— No account</option>{ACCOUNTS.map(a => <option key={a.id}>{a.name}</option>)}</select>
+              <select value={accountId} onChange={e => setAccountId(e.target.value)} className={selectCls}><option value="">— No account</option>{ACCOUNTS.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
             </Field>
-            <Field label="Description" required><textarea rows={4} placeholder="What is the customer asking for, and why?" className={textareaCls} /></Field>
+            <Field label="Description" required><textarea rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="What is the customer asking for, and why?" className={textareaCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav('request-list')}>Log Request</Btn>
+              <Btn variant="primary" onClick={submit}>Log Request</Btn>
               <Btn variant="ghost" onClick={() => nav('request-list')}>Cancel</Btn>
             </div>
           </div>
@@ -385,6 +465,7 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
                 <DetailRow label="PM Owner">{init.pm}</DetailRow>
                 <DetailRow label="Eng Lead">{init.engLead}</DetailRow>
                 <DetailRow label="QA Lead">{init.qaLead}</DetailRow>
+                <DetailRow label="Start Date">{init.startDate ?? '—'}</DetailRow>
                 <DetailRow label="Target Date">{init.targetDate}</DetailRow>
               </CardShell>
               {(ideas.length > 0 || requests.length > 0) && (
@@ -436,34 +517,52 @@ export function CreateInitiative({ nav, role }: { nav: Nav; role: Role }) {
   const [productIds, setProductIds] = useState<string[]>([])
   const toggle = (id: string) => setProductIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   const isLeadership = role === 'leadership'
+  const [title, setTitle] = useState('')
+  const [goal, setGoal] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [targetDate, setTargetDate] = useState('')
+  const [pm, setPm] = useState('')
+  const [engLead, setEngLead] = useState('')
+  const [qaLead, setQaLead] = useState('')
+  const [originatingIdeaId, setOriginatingIdeaId] = useState('')
+  const [description, setDescription] = useState('')
+
+  const submit = () => {
+    if (!title.trim() || !goal.trim() || !targetDate || productIds.length === 0) return
+    const init = createInitiative({ title, goal, description, startDate: startDate || undefined, targetDate, productIds, pm, engLead, qaLead, originatingIdeaId: originatingIdeaId || undefined })
+    nav('initiative-detail', init.id)
+  }
 
   return (
-    <WorkspaceShell title="New Initiative" subtitle={isLeadership ? 'Leadership creates initiatives with just a title and target date — everything else can be added later.' : 'Initiatives can span multiple products and optionally trace back to an idea. Customer requests link in later, from Customer Success.'} actions={<Btn small onClick={() => nav('initiative-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="New Initiative" subtitle="Title, business goal, target date and products are all that's required to get started — PM/Eng/QA leads and everything else below can be added later." actions={<Btn small onClick={() => nav('initiative-list')}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: 'New Initiative' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-5">
-            <Field label="Initiative Title" required><input placeholder="e.g. Unified Authentication" className={inputCls} /></Field>
-            <Field label="Business Goal" required hint="Describe the outcome this initiative achieves, not the work involved."><textarea rows={3} placeholder="What outcome does this initiative achieve?" className={textareaCls} /></Field>
-            <Field label="Target Date" required><input type="date" className="border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#333] bg-white outline-none focus:border-[#888]" /></Field>
+            <Field label="Initiative Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Unified Authentication" className={inputCls} /></Field>
+            <Field label="Business Goal" required hint="Describe the outcome this initiative achieves, not the work involved."><textarea rows={3} value={goal} onChange={e => setGoal(e.target.value)} placeholder="What outcome does this initiative achieve?" className={textareaCls} /></Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Start Date" hint="When work actually kicks off — powers the Planning Calendar timeline."><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#333] bg-white outline-none focus:border-[#888] w-full" /></Field>
+              <Field label="Target Date" required><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#333] bg-white outline-none focus:border-[#888] w-full" /></Field>
+            </div>
             <Field label="Products" required hint="An initiative may span multiple products at once."><ProductCheckboxes selected={productIds} onToggle={toggle} /></Field>
 
             <Divider />
             <p className="text-[11px] text-[#AAAAAA] font-medium uppercase tracking-wider">Optional — add later</p>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="PM Owner"><select className={selectCls}><option>— Assign PM</option><option>Alex Chen</option></select></Field>
-              <Field label="Engineering Lead"><select className={selectCls}><option>— Assign</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="PM Owner"><select value={pm} onChange={e => setPm(e.target.value)} className={selectCls}><option value="">— Assign PM</option><option>Alex Chen</option></select></Field>
+              <Field label="Engineering Lead"><select value={engLead} onChange={e => setEngLead(e.target.value)} className={selectCls}><option value="">— Assign</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
+              <Field label="QA Lead"><select value={qaLead} onChange={e => setQaLead(e.target.value)} className={selectCls}><option value="">— Assign</option><option>Dana Rao</option><option>Priya Sinha</option></select></Field>
             </div>
             {!isLeadership && (
               <Field label="Originating Idea" hint="Customer requests link to an initiative from Customer Success once a plan exists — not at creation.">
-                <select className={selectCls}><option>— None</option>{IDEAS.filter(i => i.status !== 'Rejected').map(i => <option key={i.id}>{i.title}</option>)}</select>
+                <select value={originatingIdeaId} onChange={e => setOriginatingIdeaId(e.target.value)} className={selectCls}><option value="">— None</option>{IDEAS.filter(i => i.status !== 'Rejected').map(i => <option key={i.id} value={i.id}>{i.title}</option>)}</select>
               </Field>
             )}
-            <Field label="Additional Context"><textarea rows={3} placeholder="Background, constraints, or references…" className={textareaCls} /></Field>
+            <Field label="Additional Context"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Background, constraints, or references…" className={textareaCls} /></Field>
 
             <div className="flex items-center gap-3 pt-2">
-              <Btn variant="primary" onClick={() => nav('initiative-list')}>Save as Draft</Btn>
-              <Btn onClick={() => nav('initiative-list')}>Save &amp; Assign PM</Btn>
+              <Btn variant="primary" onClick={submit}>Save as Draft</Btn>
               <Btn variant="ghost" onClick={() => nav('initiative-list')}>Cancel</Btn>
             </div>
           </div>
@@ -511,6 +610,7 @@ export function EpicDetail({ id, nav }: { id: string; nav: Nav }) {
                 <SectionLabel>Description</SectionLabel>
                 <p className="text-[13px] text-[#333] leading-relaxed">{epic.description}</p>
               </CardShell>
+              <NotesCard entity={epic} canEdit />
               <CardShell className="p-4">
                 <SectionLabel>Attachments</SectionLabel>
                 <AttachmentList attachments={epic.attachments} />
@@ -565,26 +665,42 @@ export function EpicDetail({ id, nav }: { id: string; nav: Nav }) {
 }
 
 export function CreateEpic({ nav, initiativeId }: { nav: Nav; initiativeId?: string }) {
+  const [title, setTitle] = useState('')
+  const [chosenInitiativeId, setChosenInitiativeId] = useState(initiativeId ?? INITIATIVES[0].id)
+  const [description, setDescription] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const [targetDate, setTargetDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [mockLink, setMockLink] = useState('')
+
+  const submit = (andAddStories: boolean) => {
+    if (!title.trim()) return
+    const epic = createEpic({ title, initiativeId: chosenInitiativeId, description, assignee, targetDate: targetDate || undefined, notes: notes || undefined, mockLink: mockLink || undefined })
+    nav(andAddStories ? 'create-story' : 'epic-detail', epic.id)
+  }
+
   return (
     <WorkspaceShell title="Create Epic" subtitle="Epics are PM-owned deliverable units of an initiative, broken into stories for engineering and QA." actions={<Btn small onClick={() => nav('initiative-detail', initiativeId)}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: initiativeId ? getInitiative(initiativeId).title : 'Initiative', screen: 'initiative-detail' }, { label: 'New Epic' }]} onNavigate={s => nav(s, initiativeId)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Epic Title" required><input placeholder="e.g. Onboarding Checklist" className={inputCls} /></Field>
+            <Field label="Epic Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Onboarding Checklist" className={inputCls} /></Field>
             <Field label="Initiative" required>
-              <select className={selectCls} defaultValue={initiativeId}>{INITIATIVES.map(i => <option key={i.id} value={i.id}>{i.title}</option>)}</select>
+              <select className={selectCls} value={chosenInitiativeId} onChange={e => setChosenInitiativeId(e.target.value)}>{INITIATIVES.map(i => <option key={i.id} value={i.id}>{i.title}</option>)}</select>
             </Field>
-            <Field label="Description"><textarea rows={3} placeholder="What does this epic deliver?" className={textareaCls} /></Field>
+            <Field label="Description"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this epic deliver?" className={textareaCls} /></Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Assignee">
-                <select className={selectCls}><option>— Unassigned</option><option>Sam Liu</option><option>Morgan Tse</option><option>Jordan Mills</option></select>
+                <select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}><option value="">— Unassigned</option><option>Sam Liu</option><option>Morgan Tse</option><option>Jordan Mills</option></select>
               </Field>
-              <Field label="Target Date"><input type="date" className={selectCls} /></Field>
+              <Field label="Target Date"><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className={selectCls} /></Field>
             </div>
+            <Field label="Mocks / Wireframes" hint="Paste a Figma or design link — shows up under Attachments once the epic is created."><input value={mockLink} onChange={e => setMockLink(e.target.value)} placeholder="e.g. https://figma.com/file/…" className={inputCls} /></Field>
+            <Field label="Notes"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything else the team should know?" className={textareaCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav('initiative-detail', initiativeId)}>Create Epic</Btn>
-              <Btn onClick={() => nav('initiative-detail', initiativeId)}>Create &amp; Add Stories</Btn>
+              <Btn variant="primary" onClick={() => submit(false)}>Create Epic</Btn>
+              <Btn onClick={() => submit(true)}>Create &amp; Add Stories</Btn>
               <Btn variant="ghost" onClick={() => nav('initiative-detail', initiativeId)}>Cancel</Btn>
             </div>
           </div>
@@ -611,6 +727,8 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
   type EngTab = 'overview' | 'tasks' | 'activity' | 'comments'
   type QaTab = 'overview' | 'validation' | 'activity' | 'comments'
   const [tab, setTab] = useState<PmTab | EngTab | QaTab>('overview')
+  const [raisingBlocker, setRaisingBlocker] = useState(false)
+  const [blockerReason, setBlockerReason] = useState('')
 
   const breadcrumbItems = role === 'pm'
     ? [{ label: init.title, screen: 'initiative-detail' }, { label: epic.title, screen: 'epic-detail' }, { label: story.title }]
@@ -620,10 +738,10 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
   const breadcrumbNav = (s: string) => nav(s, s === 'epic-detail' ? epic.id : s === 'initiative-detail' ? init.id : undefined)
 
   const actions = role === 'pm'
-    ? <><Btn small>Edit</Btn><Btn variant="primary" small onClick={() => nav('planning-board')}>Plan into Cycle</Btn></>
+    ? <><Btn small>Edit</Btn><Btn variant="primary" small onClick={() => { planStoryIntoCycle(story.id); nav('backlog') }}>Plan into Cycle</Btn></>
     : role === 'engineering'
-      ? <><Btn small onClick={() => nav('create-task', story.id)}>Split into Task</Btn><Btn variant="primary" small>Move to QA</Btn></>
-      : <><Btn small variant="outline">Request Clarification</Btn><Btn small variant="outline">Reject</Btn><Btn variant="primary" small>Approve Story</Btn></>
+      ? <><Btn small onClick={() => nav('create-task', story.id)}>Split into Task</Btn><Btn variant="primary" small onClick={() => moveStoryToQA(story.id)}>Move to QA</Btn></>
+      : <><Btn small variant="outline" onClick={() => requestStoryClarification(story.id)}>Request Clarification</Btn><Btn small variant="outline" onClick={() => rejectStory(story.id)}>Reject</Btn><Btn variant="primary" small onClick={() => approveStory(story.id)}>Approve Story</Btn></>
 
   const tabs = role === 'pm'
     ? [{ id: 'overview', label: 'Overview' }, { id: 'engineering', label: 'Engineering', count: tasks.length }, { id: 'qa', label: 'QA', count: testCases.length + bugs.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
@@ -696,7 +814,17 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
                   <SectionLabel>Quick Actions</SectionLabel>
                   <div className="flex flex-col gap-2">
                     <Btn small variant="outline" onClick={() => nav('create-task', story.id)}>+ Add Task</Btn>
-                    <Btn small variant="outline">Raise Blocker</Btn>
+                    {raisingBlocker ? (
+                      <div className="flex flex-col gap-2 pt-1">
+                        <textarea rows={2} value={blockerReason} onChange={e => setBlockerReason(e.target.value)} placeholder="What's blocking this story?" className={textareaCls} />
+                        <div className="flex gap-2">
+                          <Btn small variant="primary" onClick={() => { if (blockerReason.trim()) { raiseStoryBlocker(story.id, blockerReason.trim()); setRaisingBlocker(false); setBlockerReason('') } }}>Confirm Blocker</Btn>
+                          <Btn small variant="ghost" onClick={() => setRaisingBlocker(false)}>Cancel</Btn>
+                        </div>
+                      </div>
+                    ) : (
+                      <Btn small variant="outline" onClick={() => setRaisingBlocker(true)}>Raise Blocker</Btn>
+                    )}
                     <Btn small variant="outline">Mention QA</Btn>
                   </div>
                 </CardShell>
@@ -705,13 +833,14 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
                 <CardShell className="p-4">
                   <SectionLabel>QA Actions</SectionLabel>
                   <div className="flex flex-col gap-2">
-                    <Btn small variant="primary">Approve Story</Btn>
-                    <Btn small variant="outline">Reject Story</Btn>
-                    <Btn small variant="outline">Request Clarification</Btn>
+                    <Btn small variant="primary" onClick={() => approveStory(story.id)}>Approve Story</Btn>
+                    <Btn small variant="outline" onClick={() => rejectStory(story.id)}>Reject Story</Btn>
+                    <Btn small variant="outline" onClick={() => requestStoryClarification(story.id)}>Request Clarification</Btn>
                     <Btn small variant="outline" onClick={() => nav('create-bug', story.id)}>Log Bug</Btn>
                   </div>
                 </CardShell>
               )}
+              <NotesCard entity={story} canEdit={role === 'pm' || role === 'engineering'} />
             </div>
           </div>
         )}
@@ -803,24 +932,47 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
 }
 
 export function CreateStory({ nav, epicId, role }: { nav: Nav; epicId?: string; role: Role }) {
+  const [title, setTitle] = useState('')
+  const [chosenEpicId, setChosenEpicId] = useState(epicId ?? EPICS[0].id)
+  const [description, setDescription] = useState('')
+  const [acCriteria, setAcCriteria] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const [points, setPoints] = useState(5)
+  const [targetDate, setTargetDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [mockLink, setMockLink] = useState('')
+
+  const submit = () => {
+    if (!title.trim()) return
+    const acceptanceCriteria = acCriteria.split('\n').map(l => l.replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
+    const story = createStory({
+      title, epicId: chosenEpicId, description, acceptanceCriteria, assignee, points,
+      targetDate: targetDate || undefined, notes: notes || undefined, mockLink: mockLink || undefined,
+      createdByRole: role === 'engineering' ? 'Engineering' : 'PM',
+    })
+    nav('story-detail', story.id)
+  }
+
   return (
     <WorkspaceShell title="Create Story" subtitle={role === 'engineering' ? 'Engineering can create and split stories directly during execution.' : 'Stories are the deliverable unit engineering estimates and builds against.'} actions={<Btn small onClick={() => nav(role === 'engineering' ? 'story-list' : 'epic-detail', epicId)}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Story Title" required><input placeholder="e.g. Social sign-in integration" className={inputCls} /></Field>
+            <Field label="Story Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Social sign-in integration" className={inputCls} /></Field>
             <Field label="Epic" required>
-              <select className={selectCls} defaultValue={epicId}>{EPICS.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}</select>
+              <select className={selectCls} value={chosenEpicId} onChange={e => setChosenEpicId(e.target.value)}>{EPICS.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}</select>
             </Field>
-            <Field label="Description"><textarea rows={3} placeholder="What does this story deliver?" className={textareaCls} /></Field>
-            <Field label="Acceptance Criteria"><textarea rows={4} placeholder={'• Criterion one\n• Criterion two'} className={textareaCls + ' font-mono'} /></Field>
+            <Field label="Description"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this story deliver?" className={textareaCls} /></Field>
+            <Field label="Acceptance Criteria" hint="One per line."><textarea rows={4} value={acCriteria} onChange={e => setAcCriteria(e.target.value)} placeholder={'• Criterion one\n• Criterion two'} className={textareaCls + ' font-mono'} /></Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Assignee"><select className={selectCls}><option>— Unassigned</option><option>Sam Liu</option><option>Morgan Tse</option><option>Jordan Mills</option></select></Field>
-              <Field label="Estimate (points)"><input type="number" defaultValue={5} className={selectCls} /></Field>
+              <Field label="Assignee"><select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}><option value="">— Unassigned</option><option>Sam Liu</option><option>Morgan Tse</option><option>Jordan Mills</option></select></Field>
+              <Field label="Estimate (points)"><input type="number" value={points} onChange={e => setPoints(Number(e.target.value))} className={selectCls} /></Field>
             </div>
-            <Field label="Target Date" hint="Optional — only assign a cycle if this team plans in cycles."><input type="date" className={selectCls} /></Field>
+            <Field label="Target Date" hint="Optional — only assign a cycle if this team plans in cycles."><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className={selectCls} /></Field>
+            <Field label="Mocks / Wireframes" hint="Paste a Figma or design link — shows up under Attachments once the story is created."><input value={mockLink} onChange={e => setMockLink(e.target.value)} placeholder="e.g. https://figma.com/file/…" className={inputCls} /></Field>
+            <Field label="Notes"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything else the team should know?" className={textareaCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav(role === 'engineering' ? 'story-list' : 'epic-detail', epicId)}>Create Story</Btn>
+              <Btn variant="primary" onClick={submit}>Create Story</Btn>
               <Btn variant="ghost" onClick={() => nav(role === 'engineering' ? 'story-list' : 'epic-detail', epicId)}>Cancel</Btn>
             </div>
           </div>
@@ -854,7 +1006,7 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
           </div>
         </div>
       }
-      actions={isEngineering ? <><Btn small>Start Branch</Btn><Btn small>Link PR</Btn><Btn variant="primary" small>Mark Done</Btn></> : <Btn small variant="outline">Comment</Btn>}
+      actions={isEngineering ? <><Btn small>Start Branch</Btn><Btn small>Link PR</Btn><Btn variant="primary" small onClick={() => markTaskDone(task.id)}>Mark Done</Btn></> : <Btn small variant="outline">Comment</Btn>}
     >
       <TabBar tabs={[
         { id: 'overview', label: 'Detail' },
@@ -885,6 +1037,7 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
                 <SectionLabel>Attachments</SectionLabel>
                 <AttachmentList attachments={task.attachments} />
               </CardShell>
+              <NotesCard entity={task} canEdit={isEngineering} />
             </div>
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
@@ -905,10 +1058,10 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
                 <CardShell className="p-4">
                   <SectionLabel>Quick Actions</SectionLabel>
                   <div className="flex flex-col gap-2">
-                    <Btn small variant="outline">Mark In Progress</Btn>
+                    <Btn small variant="outline" onClick={() => setTaskWorkflowState(task.id, 'In Progress')}>Mark In Progress</Btn>
                     <Btn small variant="outline">Link Pull Request</Btn>
                     <Btn small variant="outline">Raise Blocker</Btn>
-                    <Btn small variant="outline">Split into Subtask</Btn>
+                    <Btn small variant="outline" onClick={() => nav('create-subtask', task.id)}>Split into Subtask</Btn>
                   </div>
                 </CardShell>
               )}
@@ -921,7 +1074,7 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
             <CardShell className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <SectionLabel>Subtasks</SectionLabel>
-                {isEngineering && <Btn small>+ Add Subtask</Btn>}
+                {isEngineering && <Btn small onClick={() => nav('create-subtask', task.id)}>+ Add Subtask</Btn>}
               </div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1"><ProgressBar pct={taskPct(task)} /></div>
@@ -953,21 +1106,65 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
 }
 
 export function CreateTask({ nav, storyId }: { nav: Nav; storyId?: string }) {
+  const [title, setTitle] = useState('')
+  const [chosenStoryId, setChosenStoryId] = useState(storyId ?? STORIES[0].id)
+  const [description, setDescription] = useState('')
+  const [assignee, setAssignee] = useState('Morgan Tse')
+  const [estimate, setEstimate] = useState(4)
+  const [notes, setNotes] = useState('')
+
+  const submit = () => {
+    if (!title.trim()) return
+    const task = createTask({ title, storyId: chosenStoryId, description, assignee, estimate, notes: notes || undefined })
+    nav('task-detail', task.id)
+  }
+
   return (
     <WorkspaceShell title="Create Task" subtitle="Engineering splits stories into tasks to plan execution." actions={<Btn small onClick={() => nav('story-detail', storyId)}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Task Title" required><input placeholder="e.g. Build bio input component" className={inputCls} /></Field>
-            <Field label="Story" required><select className={selectCls} defaultValue={storyId}>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
-            <Field label="Description"><textarea rows={3} placeholder="What does this task cover?" className={textareaCls} /></Field>
+            <Field label="Task Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Build bio input component" className={inputCls} /></Field>
+            <Field label="Story" required><select className={selectCls} value={chosenStoryId} onChange={e => setChosenStoryId(e.target.value)}>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
+            <Field label="Description"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this task cover?" className={textareaCls} /></Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Assignee"><select className={selectCls}><option>Morgan Tse</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
-              <Field label="Estimate (hours)"><input type="number" defaultValue={4} className={selectCls} /></Field>
+              <Field label="Assignee"><select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}><option>Morgan Tse</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
+              <Field label="Estimate (hours)"><input type="number" value={estimate} onChange={e => setEstimate(Number(e.target.value))} className={selectCls} /></Field>
             </div>
+            <Field label="Notes"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything else the team should know?" className={textareaCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav('story-detail', storyId)}>Create Task</Btn>
+              <Btn variant="primary" onClick={submit}>Create Task</Btn>
               <Btn variant="ghost" onClick={() => nav('story-detail', storyId)}>Cancel</Btn>
+            </div>
+          </div>
+        </CardShell>
+      </div>
+    </WorkspaceShell>
+  )
+}
+
+export function CreateSubtask({ nav, taskId }: { nav: Nav; taskId?: string }) {
+  const task = taskId ? getTask(taskId) : TASKS[0]
+  const [title, setTitle] = useState('')
+  const [assignee, setAssignee] = useState('')
+
+  const submit = () => {
+    if (!title.trim() || !task) return
+    createSubtask(task.id, title, assignee || undefined)
+    nav('task-detail', task.id)
+  }
+
+  return (
+    <WorkspaceShell title="Add Subtask" subtitle={`Breaking down ${task?.title ?? 'a task'} into a smaller checklist item.`} actions={<Btn small onClick={() => nav('task-detail', taskId)}>Cancel</Btn>}>
+      <div className="max-w-2xl">
+        <Breadcrumb items={[{ label: 'Story', screen: 'story-detail' }, { label: task?.title ?? 'Task', screen: 'task-detail' }, { label: 'New Subtask' }]} onNavigate={s => nav(s, s === 'story-detail' ? task?.storyId : task?.id)} />
+        <CardShell className="p-6">
+          <div className="flex flex-col gap-4">
+            <Field label="Subtask Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Add debounce on uniqueness check" className={inputCls} /></Field>
+            <Field label="Assignee"><select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}><option value="">— Unassigned</option><option>Morgan Tse</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
+            <div className="flex items-center gap-3 pt-1">
+              <Btn variant="primary" onClick={submit}>Add Subtask</Btn>
+              <Btn variant="ghost" onClick={() => nav('task-detail', taskId)}>Cancel</Btn>
             </div>
           </div>
         </CardShell>
@@ -989,9 +1186,9 @@ export function BugDetail({ id, nav, role }: { id: string; nav: Nav; role: Role 
   const linkedTCs = bug.linkedTestCaseIds.map(tid => getTestCase(tid)).filter(Boolean)
 
   const actions = role === 'qa'
-    ? <><Btn small variant="outline">Request Fix</Btn><Btn small variant="outline">Duplicate Bug</Btn><Btn variant="primary" small>Mark Verified</Btn></>
+    ? <><Btn small variant="outline" onClick={() => requestBugFix(bug.id)}>Request Fix</Btn><Btn small variant="outline" onClick={() => closeBugAsDuplicate(bug.id)}>Duplicate Bug</Btn><Btn variant="primary" small onClick={() => markBugVerified(bug.id)}>Mark Verified</Btn></>
     : role === 'engineering'
-      ? <><Btn small variant="outline">Mark In Fix</Btn><Btn variant="primary" small>Mark Fixed</Btn></>
+      ? <><Btn small variant="outline" onClick={() => markBugInFix(bug.id)}>Mark In Fix</Btn><Btn variant="primary" small onClick={() => markBugFixed(bug.id)}>Mark Fixed</Btn></>
       : <Btn small variant="outline">Comment</Btn>
 
   return (
@@ -1089,22 +1286,37 @@ export function BugDetail({ id, nav, role }: { id: string; nav: Nav; role: Role 
 }
 
 export function CreateBug({ nav, storyId }: { nav: Nav; storyId?: string }) {
+  const [title, setTitle] = useState('')
+  const [chosenStoryId, setChosenStoryId] = useState(storyId ?? '')
+  const [severity, setSeverity] = useState<Priority>('High')
+  const [expectedResult, setExpectedResult] = useState('')
+  const [actualResult, setActualResult] = useState('')
+  const [reproSteps, setReproSteps] = useState('')
+  const [environment, setEnvironment] = useState('')
+
+  const submit = () => {
+    if (!title.trim() || !expectedResult.trim() || !actualResult.trim() || !reproSteps.trim()) return
+    const steps = reproSteps.split('\n').map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean)
+    const bug = createBug({ title, storyId: chosenStoryId || undefined, severity, expectedResult, actualResult, reproSteps: steps, environment })
+    nav('bug-detail', bug.id)
+  }
+
   return (
     <WorkspaceShell title="Log Bug" subtitle="Logging a bug automatically opens a Bug Fix task for the assigned engineer." actions={<Btn small onClick={() => nav(storyId ? 'story-detail' : 'bug-list', storyId)}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Bug Title" required><input placeholder="Short, specific summary" className={inputCls} /></Field>
+            <Field label="Bug Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="Short, specific summary" className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Story" required><select className={selectCls} defaultValue={storyId}><option>— Not linked</option>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
-              <Field label="Severity" required><select className={selectCls}><option>Critical</option><option selected>High</option><option>Medium</option><option>Low</option></select></Field>
+              <Field label="Story" required><select className={selectCls} value={chosenStoryId} onChange={e => setChosenStoryId(e.target.value)}><option value="">— Not linked</option>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
+              <Field label="Severity" required><select value={severity} onChange={e => setSeverity(e.target.value as Priority)} className={selectCls}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></Field>
             </div>
-            <Field label="Expected Result" required><textarea rows={2} className={textareaCls} /></Field>
-            <Field label="Actual Result" required><textarea rows={2} className={textareaCls} /></Field>
-            <Field label="Reproduction Steps" required><textarea rows={4} placeholder={'1. Step one\n2. Step two'} className={textareaCls + ' font-mono'} /></Field>
-            <Field label="Environment"><input placeholder="e.g. iOS 17.5, iPhone 15 Pro" className={inputCls} /></Field>
+            <Field label="Expected Result" required><textarea rows={2} value={expectedResult} onChange={e => setExpectedResult(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Actual Result" required><textarea rows={2} value={actualResult} onChange={e => setActualResult(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Reproduction Steps" required><textarea rows={4} value={reproSteps} onChange={e => setReproSteps(e.target.value)} placeholder={'1. Step one\n2. Step two'} className={textareaCls + ' font-mono'} /></Field>
+            <Field label="Environment"><input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="e.g. iOS 17.5, iPhone 15 Pro" className={inputCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav(storyId ? 'story-detail' : 'bug-list', storyId)}>Log Bug</Btn>
+              <Btn variant="primary" onClick={submit}>Log Bug</Btn>
               <Btn variant="ghost" onClick={() => nav(storyId ? 'story-detail' : 'bug-list', storyId)}>Cancel</Btn>
             </div>
           </div>
@@ -1137,7 +1349,7 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
           </div>
         </div>
       }
-      actions={role === 'qa' ? <><Btn small>Generate Edge Cases</Btn><Btn small onClick={() => nav('create-bug', story.id)}>Log Bug</Btn><Btn variant="primary" small>Mark Passed</Btn></> : undefined}
+      actions={role === 'qa' ? <><Btn small>Generate Edge Cases</Btn><Btn small onClick={() => nav('create-bug', story.id)}>Log Bug</Btn><Btn variant="primary" small onClick={() => setTestCaseStatus(tc.id, 'Passed')}>Mark Passed</Btn></> : undefined}
     >
       <TabBar tabs={[{ id: 'overview', label: 'Steps' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: tc.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
@@ -1193,9 +1405,9 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
                 <CardShell className="p-4">
                   <SectionLabel>Actions</SectionLabel>
                   <div className="flex flex-col gap-2">
-                    <Btn small variant="primary">Mark Passed</Btn>
-                    <Btn small variant="outline">Mark Failed + Log Bug</Btn>
-                    <Btn small variant="outline">Mark Blocked</Btn>
+                    <Btn small variant="primary" onClick={() => setTestCaseStatus(tc.id, 'Passed')}>Mark Passed</Btn>
+                    <Btn small variant="outline" onClick={() => { setTestCaseStatus(tc.id, 'Failed'); nav('create-bug', story.id) }}>Mark Failed + Log Bug</Btn>
+                    <Btn small variant="outline" onClick={() => setTestCaseStatus(tc.id, 'Blocked')}>Mark Blocked</Btn>
                     <Btn small variant="outline">Add to Regression Suite</Btn>
                   </div>
                 </CardShell>
@@ -1211,17 +1423,49 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
 }
 
 export function CreateTestCase({ nav, storyId }: { nav: Nav; storyId?: string }) {
+  const [title, setTitle] = useState('')
+  const [chosenStoryId, setChosenStoryId] = useState(storyId ?? STORIES[0].id)
+  const [steps, setSteps] = useState('')
+  const [assignee, setAssignee] = useState('Dana Rao')
+
+  // Genuinely reads the selected story's real acceptance criteria and mocks
+  // (rather than faking an "AI" output) — one step per AC, plus a note when
+  // the story has a mock/wireframe attached to check against visually.
+  const generateFromStory = () => {
+    const story = getStory(chosenStoryId)
+    if (!story) return
+    const acLines = story.acceptanceCriteria.map(ac => `Verify: ${ac} → Meets acceptance criteria`)
+    const mock = story.attachments.find(a => a.type === 'link' || a.type === 'image')
+    const mockLine = mock ? [`Compare against ${mock.name} → Matches the mock/wireframe`] : []
+    setSteps([...acLines, ...mockLine].join('\n'))
+    if (!title.trim()) setTitle(`${story.title} — acceptance criteria coverage`)
+  }
+
+  const submit = () => {
+    if (!title.trim() || !steps.trim()) return
+    const parsed = steps.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      const [step, expected] = line.split('→').map(s => s.trim())
+      return { step, expected: expected ?? 'Behaves as expected' }
+    })
+    const tc = createTestCase({ title, storyId: chosenStoryId, steps: parsed, assignee })
+    nav('test-case-detail', tc.id)
+  }
+
   return (
     <WorkspaceShell title="Create Test Case" subtitle="Test cases validate a story's acceptance criteria." actions={<Btn small onClick={() => nav(storyId ? 'story-detail' : 'testing-queue', storyId)}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Test Case Title" required><input placeholder="e.g. Checkout — happy path with new card" className={inputCls} /></Field>
-            <Field label="Story" required><select className={selectCls} defaultValue={storyId}>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
-            <Field label="Steps" required><textarea rows={5} placeholder={'Step → Expected result, one per line'} className={textareaCls} /></Field>
-            <Field label="Assignee"><select className={selectCls}><option>Dana Rao</option><option>Priya Sinha</option></select></Field>
+            <Field label="Test Case Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Checkout — happy path with new card" className={inputCls} /></Field>
+            <Field label="Story" required><select className={selectCls} value={chosenStoryId} onChange={e => setChosenStoryId(e.target.value)}>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-[#555] uppercase tracking-wider">Steps <span className="text-[#CC4444]">*</span></label>
+              <Btn small variant="ghost" onClick={generateFromStory}>Generate from Acceptance Criteria &amp; Mocks</Btn>
+            </div>
+            <textarea rows={6} value={steps} onChange={e => setSteps(e.target.value)} placeholder={'Step → Expected result, one per line'} className={textareaCls} />
+            <Field label="Assignee"><select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}><option>Dana Rao</option><option>Priya Sinha</option></select></Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav(storyId ? 'story-detail' : 'testing-queue', storyId)}>Create Test Case</Btn>
+              <Btn variant="primary" onClick={submit}>Create Test Case</Btn>
               <Btn variant="ghost" onClick={() => nav(storyId ? 'story-detail' : 'testing-queue', storyId)}>Cancel</Btn>
             </div>
           </div>
@@ -1239,6 +1483,7 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
   const [tab, setTab] = useState<'overview' | 'epics' | 'gates' | 'activity' | 'comments'>('overview')
   const rel = getRelease(id) ?? RELEASES[0]
   const epics = rel.epicIds.map(eid => getEpic(eid)).filter(Boolean)
+  const standaloneStories = (rel.storyIds ?? []).map(sid => getStory(sid)).filter(Boolean)
   const gatePct = releasePct(rel)
   const canGate = role === 'qa' || role === 'pm'
 
@@ -1253,11 +1498,11 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
           </div>
         </div>
       }
-      actions={canGate ? <><Btn small variant="outline">Request Fix</Btn><Btn variant={gatePct === 100 ? 'primary' : 'outline'} small>{gatePct === 100 ? 'Approve Release' : 'Release Blocked'}</Btn></> : undefined}
+      actions={canGate ? <><Btn small variant="outline">Request Fix</Btn><Btn variant={gatePct === 100 ? 'primary' : 'outline'} small onClick={gatePct === 100 ? () => approveRelease(rel.id) : undefined}>{gatePct === 100 ? 'Approve Release' : 'Release Blocked'}</Btn></> : undefined}
     >
       <TabBar tabs={[
         { id: 'overview', label: 'Overview' },
-        { id: 'epics', label: 'Epics in Scope', count: epics.length },
+        { id: 'epics', label: 'In Scope', count: epics.length + standaloneStories.length },
         { id: 'gates', label: 'Gates', count: rel.gateChecks.length },
         { id: 'activity', label: 'Activity' },
         { id: 'comments', label: 'Comments', count: rel.comments.length },
@@ -1284,15 +1529,33 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
         )}
 
         {tab === 'epics' && (
-          <div className="max-w-4xl flex flex-col gap-2">
-            {epics.map(epic => (
-              <CardShell key={epic!.id} onClick={role === 'pm' ? () => nav('epic-detail', epic!.id) : undefined}>
-                <div className="px-4 py-3 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3"><span className="text-[12.5px] font-medium text-[#333]">{epic!.title}</span><StatusPair workflow={epic!.workflowState} health={epicHealth(epic!)} /></div>
-                  <span className="text-[11px] text-[#888]">{epicPct(epic!)}%</span>
+          <div className="max-w-4xl flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              {epics.length === 0 && standaloneStories.length === 0 && <EmptyState icon="◇" title="Nothing in scope yet" />}
+              {epics.map(epic => (
+                <CardShell key={epic!.id} onClick={role === 'pm' ? () => nav('epic-detail', epic!.id) : undefined}>
+                  <div className="px-4 py-3 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3"><span className="text-[12.5px] font-medium text-[#333]">{epic!.title}</span><StatusPair workflow={epic!.workflowState} health={epicHealth(epic!)} /></div>
+                    <span className="text-[11px] text-[#888]">{epicPct(epic!)}%</span>
+                  </div>
+                </CardShell>
+              ))}
+            </div>
+            {standaloneStories.length > 0 && (
+              <div>
+                <SectionLabel>Individual Stories (incremental — shipped without their whole epic)</SectionLabel>
+                <div className="flex flex-col gap-2 mt-2">
+                  {standaloneStories.map(story => (
+                    <CardShell key={story!.id} onClick={role === 'pm' ? () => nav('story-detail', story!.id) : undefined}>
+                      <div className="px-4 py-3 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3"><span className="text-[10px] font-mono text-[#CCCCCC]">{story!.id.toUpperCase()}</span><span className="text-[12.5px] font-medium text-[#333]">{story!.title}</span><StatusPair workflow={story!.workflowState} health={storyHealth(story!)} /></div>
+                        <span className="text-[11px] text-[#888]">{story!.points} pts</span>
+                      </div>
+                    </CardShell>
+                  ))}
                 </div>
-              </CardShell>
-            ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1301,11 +1564,16 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
             <CardShell className="p-4">
               <div className="flex items-center gap-2 mb-3"><ProgressBar pct={gatePct} /><span className="text-[11px] text-[#888] flex-shrink-0">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</span></div>
               {rel.gateChecks.map((gate, i) => (
-                <div key={i} className="flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0">
+                <div
+                  key={i}
+                  onClick={canGate ? () => toggleGateCheck(rel.id, i) : undefined}
+                  className={`flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0 ${canGate ? 'cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4' : ''}`}
+                >
                   <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#888]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
                   <div><p className={`text-[12px] ${gate.passed ? 'text-[#888] line-through' : 'text-[#333]'}`}>{gate.label}</p>{gate.note && <p className="text-[10px] text-[#CC4444] mt-0.5">⚠ {gate.note}</p>}</div>
                 </div>
               ))}
+              {canGate && <p className="text-[10.5px] text-[#BBBBBB] mt-2">Click a gate to toggle it passed/open.</p>}
             </CardShell>
           </div>
         )}
@@ -1318,26 +1586,186 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
 }
 
 export function CreateRelease({ nav }: { nav: Nav }) {
+  const [name, setName] = useState('')
+  const [targetDate, setTargetDate] = useState('')
+  const [description, setDescription] = useState('')
+  const [epicIds, setEpicIds] = useState<string[]>([])
+  const [storyIds, setStoryIds] = useState<string[]>([])
+  const [gateLabels, setGateLabels] = useState<string[]>(RELEASE_GATE_LABELS)
+
+  const toggle = (list: string[], set: (v: string[]) => void, id: string) => set(list.includes(id) ? list.filter(x => x !== id) : [...list, id])
+  // Stories already covered by a selected epic don't need to be picked
+  // individually — this list is for incremental, epic-less releases only.
+  const uncoveredStories = STORIES.filter(s => !epicIds.includes(s.epicId))
+
+  const submit = () => {
+    if (!name.trim() || !targetDate) return
+    const rel = createRelease({ name, targetDate, description, epicIds, storyIds, gateLabels })
+    nav('release-detail', rel.id)
+  }
+
   return (
-    <WorkspaceShell title="New Release" subtitle="Group epics into a gated release." actions={<Btn small onClick={() => nav('release-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="New Release" subtitle="Group epics — and, for incremental ships, individual stories — into a gated release." actions={<Btn small onClick={() => nav('release-list')}>Cancel</Btn>}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
-            <Field label="Release Name" required><input placeholder="e.g. v2.5.0" className={inputCls} /></Field>
-            <Field label="Target Date" required><input type="date" className={selectCls} /></Field>
-            <Field label="Description"><textarea rows={3} className={textareaCls} /></Field>
+            <Field label="Release Name" required><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. v2.5.0" className={inputCls} /></Field>
+            <Field label="Target Date" required><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className={selectCls} /></Field>
+            <Field label="Description"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className={textareaCls} /></Field>
             <Field label="Epics in Scope">
               <div className="flex flex-col gap-1.5">
                 {EPICS.map(e => (
                   <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
-                    <input type="checkbox" className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{e.title}</span>
+                    <input type="checkbox" checked={epicIds.includes(e.id)} onChange={() => toggle(epicIds, setEpicIds, e.id)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{e.title}</span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <Field label="Individual Stories (optional)" hint="For shipping a story incrementally, without waiting for its whole epic.">
+              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+                {uncoveredStories.map(s => (
+                  <label key={s.id} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
+                    <input type="checkbox" checked={storyIds.includes(s.id)} onChange={() => toggle(storyIds, setStoryIds, s.id)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{s.title}</span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <Field label="Gate Checks" hint="Which checks does this release need to clear? Each stays a manual sign-off, not an automated check.">
+              <div className="flex flex-col gap-1.5">
+                {RELEASE_GATE_LABELS.map(label => (
+                  <label key={label} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
+                    <input type="checkbox" checked={gateLabels.includes(label)} onChange={() => toggle(gateLabels, setGateLabels, label)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{label}</span>
                   </label>
                 ))}
               </div>
             </Field>
             <div className="flex items-center gap-3 pt-1">
-              <Btn variant="primary" onClick={() => nav('release-list')}>Create Release</Btn>
+              <Btn variant="primary" onClick={submit}>Create Release</Btn>
               <Btn variant="ghost" onClick={() => nav('release-list')}>Cancel</Btn>
+            </div>
+          </div>
+        </CardShell>
+      </div>
+    </WorkspaceShell>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOTFIXES
+//
+// Deliberately standalone: tied to a Product, never an Initiative. Reads as
+// a release log — why it happened, what the fix was — logged by whichever
+// engineer shipped it, out of band from the normal Bug → Story pipeline.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function HotfixList({ nav, productId }: { nav: Nav; productId?: string }) {
+  const list = productId ? HOTFIXES.filter(h => h.productId === productId) : HOTFIXES
+  return (
+    <WorkspaceShell title="Hotfixes" subtitle="Unplanned, out-of-cycle production fixes — logged by the engineer who shipped them. Never tied to an initiative." actions={<Btn small variant="primary" onClick={() => nav('create-hotfix')}>+ Log Hotfix</Btn>}>
+      <div className="max-w-4xl flex flex-col gap-2">
+        {list.length === 0 && <EmptyState icon="⚑" title="No hotfixes logged" sub="Out-of-cycle production fixes will show up here." />}
+        {list.map(hf => {
+          const product = getProduct(hf.productId)
+          return (
+            <CardShell key={hf.id} onClick={() => nav('hotfix-detail', hf.id)}>
+              <div className="px-4 py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <SeverityBadge severity={hf.severity} />
+                  <span className="text-[12.5px] font-medium text-[#1A1A1A] truncate">{hf.title}</span>
+                  {product && <Tag label={product.name} variant="muted" />}
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="text-[10px] text-[#BBBBBB]">{hf.reportedBy} · {hf.createdAt}</span>
+                  <Tag label={hf.status} variant={hf.status === 'Shipped' ? 'dark' : 'outline'} />
+                </div>
+              </div>
+            </CardShell>
+          )
+        })}
+      </div>
+    </WorkspaceShell>
+  )
+}
+
+export function HotfixDetail({ id, nav }: { id: string; nav: Nav }) {
+  const [tab, setTab] = useState<'overview' | 'activity'>('overview')
+  const hf = getHotfix(id) ?? HOTFIXES[0]
+  const product = getProduct(hf.productId)
+  return (
+    <WorkspaceShell
+      title={
+        <div>
+          <Breadcrumb items={[{ label: 'Hotfixes', screen: 'hotfix-list' }, { label: hf.title }]} onNavigate={s => nav(s)} />
+          <div className="flex items-center gap-3">
+            <h1 className="text-[15px] font-semibold text-[#1A1A1A]">{hf.title}</h1>
+            <SeverityBadge severity={hf.severity} />
+            <Tag label={hf.status} variant={hf.status === 'Shipped' ? 'dark' : 'outline'} />
+          </div>
+        </div>
+      }
+    >
+      <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }]} active={tab} onSelect={setTab} />
+      <div className="px-6 py-5">
+        {tab === 'overview' && (
+          <div className="grid grid-cols-[1fr_240px] gap-5 max-w-4xl">
+            <div className="flex flex-col gap-4">
+              <CardShell className="p-4">
+                <SectionLabel>Why it happened</SectionLabel>
+                <p className="text-[13px] text-[#333] leading-relaxed">{hf.rootCause}</p>
+              </CardShell>
+              <CardShell className="p-4">
+                <SectionLabel>The fix</SectionLabel>
+                <p className="text-[13px] text-[#333] leading-relaxed">{hf.fixSummary}</p>
+              </CardShell>
+            </div>
+            <div className="flex flex-col gap-4">
+              <CardShell className="p-4">
+                <DetailRow label="Product">{product?.name ?? '—'}</DetailRow>
+                <DetailRow label="Severity"><SeverityBadge severity={hf.severity} /></DetailRow>
+                <DetailRow label="Reported by">{hf.reportedBy}</DetailRow>
+                <DetailRow label="Assignee">{hf.assignee}</DetailRow>
+                <DetailRow label="Logged">{hf.createdAt}</DetailRow>
+                <DetailRow label="Shipped">{hf.shippedAt ?? '—'}</DetailRow>
+              </CardShell>
+            </div>
+          </div>
+        )}
+        {tab === 'activity' && <div className="max-w-2xl"><CardShell className="p-5"><ActivityTimeline items={hf.activity} /></CardShell></div>}
+      </div>
+    </WorkspaceShell>
+  )
+}
+
+export function CreateHotfix({ nav, productId }: { nav: Nav; productId?: string }) {
+  const [title, setTitle] = useState('')
+  const [chosenProductId, setChosenProductId] = useState(productId ?? PRODUCTS[0].id)
+  const [severity, setSeverity] = useState<Priority>('High')
+  const [rootCause, setRootCause] = useState('')
+  const [fixSummary, setFixSummary] = useState('')
+  const [reportedBy, setReportedBy] = useState('Morgan Tse')
+
+  const submit = () => {
+    if (!title.trim() || !rootCause.trim() || !fixSummary.trim()) return
+    const hf = createHotfix({ title, productId: chosenProductId, severity, rootCause, fixSummary, reportedBy })
+    nav('hotfix-detail', hf.id)
+  }
+
+  return (
+    <WorkspaceShell title="Log Hotfix" subtitle="For an unplanned production fix shipped outside the normal cycle — never tied to an initiative. Captured here so there's a record of why it happened and what changed." actions={<Btn small onClick={() => nav('hotfix-list')}>Cancel</Btn>}>
+      <div className="max-w-2xl">
+        <CardShell className="p-6">
+          <div className="flex flex-col gap-4">
+            <Field label="Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Push notification crash on Android 14" className={inputCls} /></Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Product" required><select className={selectCls} value={chosenProductId} onChange={e => setChosenProductId(e.target.value)}>{PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+              <Field label="Severity" required><select value={severity} onChange={e => setSeverity(e.target.value as Priority)} className={selectCls}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></Field>
+            </div>
+            <Field label="Root Cause" required hint="Why did this happen?"><textarea rows={3} value={rootCause} onChange={e => setRootCause(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Fix Summary" required hint="What changed?"><textarea rows={3} value={fixSummary} onChange={e => setFixSummary(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Reported / Shipped By"><select value={reportedBy} onChange={e => setReportedBy(e.target.value)} className={selectCls}><option>Morgan Tse</option><option>Sam Liu</option><option>Jordan Mills</option></select></Field>
+            <div className="flex items-center gap-3 pt-1">
+              <Btn variant="primary" onClick={submit}>Log Hotfix</Btn>
+              <Btn variant="ghost" onClick={() => nav('hotfix-list')}>Cancel</Btn>
             </div>
           </div>
         </CardShell>

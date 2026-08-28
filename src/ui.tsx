@@ -99,6 +99,35 @@ export function CardShell({ children, className = '', onClick }: { children: Rea
   )
 }
 
+// A lightweight modal for "View all" style drill-ins from a Dashboard card —
+// keeps the underlying screen mounted (and its data live) rather than
+// navigating away to a whole separate route.
+export function Modal({ title, subtitle, onClose, children, wide }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/40 p-6" onClick={onClose}>
+      <div
+        className={`bg-white rounded-lg shadow-xl border border-[#E4E4E4] w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} max-h-[85vh] flex flex-col`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-[#F0F0F0] flex items-start justify-between gap-4 flex-shrink-0">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[#1A1A1A]">{title}</h2>
+            {subtitle && <p className="text-[11.5px] text-[#888] mt-0.5">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="text-[#AAAAAA] hover:text-[#333] text-[18px] leading-none px-1">×</button>
+        </div>
+        <div className="overflow-y-auto px-5 py-4">{children}</div>
+      </div>
+    </div>
+  )
+}
+
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[10px] font-semibold uppercase tracking-widest text-[#AAAAAA] mb-2">{children}</p>
 }
@@ -187,6 +216,143 @@ export function TabBar<T extends string>({ tabs, active, onSelect }: { tabs: { i
           )}
         </button>
       ))}
+    </div>
+  )
+}
+
+// ─── Kanban Board ─────────────────────────────────────────────────────────────
+// Generic multi-column board — each column is a lifecycle stage, each card is
+// whatever the caller renders. Shared by every space's Planning workspace so
+// Ideas/Initiatives/Requests/Releases all get identical board mechanics
+// instead of four bespoke re-implementations.
+
+export function KanbanBoard<T>({ columns, cardKey, renderCard }: {
+  columns: { id: string; label: string; items: T[] }[]
+  cardKey: (item: T) => string
+  renderCard: (item: T) => React.ReactNode
+}) {
+  return (
+    <div className="flex overflow-x-auto gap-4 pb-2">
+      {columns.map(col => (
+        <div key={col.id} className="flex-shrink-0 w-64 flex flex-col gap-3">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[12px] font-semibold text-[#555]">{col.label}</span>
+            <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{col.items.length}</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {col.items.map(item => <div key={cardKey(item)}>{renderCard(item)}</div>)}
+            {col.items.length === 0 && (
+              <div className="text-[10.5px] text-[#CCCCCC] italic py-5 text-center border border-dashed border-[#E4E4E4] rounded-md">Empty</div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Gantt Timeline ────────────────────────────────────────────────────────────
+// Shared date math + rendering for every timeline view in the app (previously
+// duplicated per-space, and disconnected from any real date field — see the
+// Leadership Planning Calendar fix). A row whose start and end land in the
+// same place renders as a milestone diamond instead of a zero-width bar —
+// this lets Releases (a single target date) plot on the same timeline as
+// Initiatives (a start + target date) without a separate rendering path.
+
+export const GANTT_MONTHS = ['Jul 2026', 'Aug 2026', 'Sep 2026', 'Oct 2026', 'Nov 2026', 'Dec 2026']
+const GANTT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+export function monthPosition(dateStr?: string): number | null {
+  if (!dateStr) return null
+  const m = dateStr.match(/([A-Za-z]{3})[a-z]*\s+(\d{1,2})/)
+  if (!m) return null
+  const monthIdx = GANTT_MONTH_NAMES.findIndex(mn => mn.toLowerCase() === m[1].slice(0, 3).toLowerCase())
+  if (monthIdx === -1) return null
+  const day = parseInt(m[2], 10)
+  const pos = (monthIdx - 6) + (day - 1) / 30 // window starts at July (index 6)
+  return Math.max(0, Math.min(5.95, pos))
+}
+
+export function ganttBarClass(health: Health): string {
+  switch (health) {
+    case 'Blocked': return 'bg-[#F5E8E8] border border-[#E8CCCC] text-[#CC4444]'
+    case 'Overdue': return 'bg-[#1A1A1A] border border-[#1A1A1A] text-white'
+    case 'Not Started': return 'bg-[#F5F5F5] border border-dashed border-[#CCCCCC] text-[#AAAAAA]'
+    case 'Completed': return 'bg-[#444] border border-[#444] text-white'
+    default: return 'bg-[#EBEBEB] border border-[#D8D8D8] text-[#555]'
+  }
+}
+
+export function ganttDotClass(health: Health): string {
+  switch (health) {
+    case 'Blocked': return 'bg-[#CC4444]'
+    case 'Overdue': return 'bg-[#1A1A1A]'
+    case 'Not Started': return 'bg-[#CCCCCC]'
+    case 'Completed': return 'bg-[#444]'
+    default: return 'bg-[#888]'
+  }
+}
+
+export function GanttTimeline({ rows, milestones }: {
+  rows: { id: string; label: string; start: number; end: number; colorClass: string; onClick?: () => void }[]
+  milestones?: { label: string; month: number }[]
+}) {
+  return (
+    <div className="bg-white border border-[#E4E4E4] rounded-md overflow-hidden">
+      <div className="grid border-b border-[#E4E4E4]" style={{ gridTemplateColumns: '160px repeat(6, 1fr)' }}>
+        <div className="px-4 py-3 border-r border-[#E4E4E4] bg-[#FAFAFA]" />
+        {GANTT_MONTHS.map(m => (
+          <div key={m} className="px-3 py-3 text-[11px] font-semibold text-[#888] border-r border-[#E4E4E4] last:border-0 text-center uppercase tracking-wider">{m}</div>
+        ))}
+      </div>
+
+      {milestones && milestones.length > 0 && (
+        <div className="grid border-b border-[#F0F0F0] bg-[#FAFAFA]" style={{ gridTemplateColumns: '160px 1fr' }}>
+          <div className="px-4 py-2 border-r border-[#E4E4E4] text-[10px] font-semibold text-[#AAAAAA] uppercase tracking-wider flex items-center">Milestones</div>
+          <div className="relative h-8">
+            {milestones.map(m => (
+              <div key={m.label} className="absolute flex flex-col items-center" style={{ left: `${(m.month / 6) * 100}%` }}>
+                <div className="w-px h-3 bg-[#888] mt-1" />
+                <div className="w-2 h-2 bg-[#888] rotate-45 -mt-1" />
+                <span className="text-[9px] text-[#555] whitespace-nowrap mt-1 -translate-x-1/2">{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 && <div className="px-4 py-8 text-center text-[11.5px] text-[#CCCCCC] italic">Nothing to show on the timeline.</div>}
+
+      {rows.map(row => {
+        const isPoint = Math.abs(row.end - row.start) < 0.05
+        return (
+          <div key={row.id} className="grid border-b border-[#F5F5F5] last:border-0 items-center" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="px-4 py-3 border-r border-[#E4E4E4] text-[11.5px] font-medium text-[#444] truncate">{row.label}</div>
+            <div className="relative h-10 px-2 flex items-center">
+              <div className="absolute inset-x-0 flex">
+                {Array.from({ length: 6 }, (_, j) => <div key={j} className="flex-1 h-10 border-r border-[#F5F5F5] last:border-0" />)}
+              </div>
+              {isPoint ? (
+                <div
+                  onClick={row.onClick}
+                  className={`absolute flex flex-col items-center ${row.onClick ? 'cursor-pointer' : ''}`}
+                  style={{ left: `${(row.start / 6) * 100}%` }}
+                >
+                  <div className={`w-3 h-3 rotate-45 ${row.colorClass}`} />
+                </div>
+              ) : (
+                <div
+                  onClick={row.onClick}
+                  className={`absolute h-5 rounded flex items-center px-2 text-[10px] font-medium ${row.onClick ? 'cursor-pointer' : ''} ${row.colorClass}`}
+                  style={{ left: `${(row.start / 6) * 100}%`, width: `${((row.end - row.start) / 6) * 100}%` }}
+                >
+                  <span className="truncate">{row.label}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -408,10 +574,10 @@ export function WorkflowTypeTag({ type }: { type: WorkflowTask['type'] }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${wfTypeStyles[type]}`}>{type}</span>
 }
 
-export function WorkflowTaskRow({ task, onClick }: { task: WorkflowTask; onClick?: () => void }) {
+export function WorkflowTaskRow({ task, onClick, onAcknowledge, onComplete }: { task: WorkflowTask; onClick?: () => void; onAcknowledge?: () => void; onComplete?: () => void }) {
   return (
-    <div onClick={onClick} className={`px-4 py-3 border-b border-[#F5F5F5] last:border-0 flex items-start justify-between gap-3 ${onClick ? 'cursor-pointer hover:bg-[#FAFAFA]' : ''}`}>
-      <div className="flex items-start gap-2.5 min-w-0">
+    <div className={`px-4 py-3 border-b border-[#F5F5F5] last:border-0 flex items-start justify-between gap-3 ${onClick ? 'hover:bg-[#FAFAFA]' : ''}`}>
+      <div onClick={onClick} className={`flex items-start gap-2.5 min-w-0 flex-1 ${onClick ? 'cursor-pointer' : ''}`}>
         <div className="w-4 h-4 rounded-full border-2 border-dashed border-[#BBBBBB] flex-shrink-0 mt-0.5" />
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -425,14 +591,24 @@ export function WorkflowTaskRow({ task, onClick }: { task: WorkflowTask; onClick
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         <Tag label={task.status} variant={task.status === 'Done' ? 'dark' : task.status === 'Acknowledged' ? 'default' : 'outline'} />
         <span className="text-[10px] text-[#BBBBBB]">{task.assignee}</span>
+        {(onAcknowledge || onComplete) && task.status !== 'Done' && (
+          <div className="flex gap-1.5 mt-0.5">
+            {task.status === 'Pending' && onAcknowledge && (
+              <button onClick={e => { e.stopPropagation(); onAcknowledge() }} className="text-[9.5px] text-[#888] hover:text-[#333] px-1.5 py-0.5 border border-[#E0E0E0] rounded">Acknowledge</button>
+            )}
+            {onComplete && (
+              <button onClick={e => { e.stopPropagation(); onComplete() }} className="text-[9.5px] text-[#888] hover:text-[#333] px-1.5 py-0.5 border border-[#E0E0E0] rounded">Mark Done</button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-export function WorkflowQueue({ tasks, onSelect, emptyLabel }: { tasks: WorkflowTask[]; onSelect?: (t: WorkflowTask) => void; emptyLabel?: string }) {
+export function WorkflowQueue({ tasks, onSelect, emptyLabel, onAcknowledge, onComplete }: { tasks: WorkflowTask[]; onSelect?: (t: WorkflowTask) => void; emptyLabel?: string; onAcknowledge?: (id: string) => void; onComplete?: (id: string) => void }) {
   if (tasks.length === 0) return <EmptyState icon="✓" title={emptyLabel ?? 'No pending workflow tasks'} sub="Cross-role handoffs will appear here automatically." />
-  return <div>{tasks.map(t => <WorkflowTaskRow key={t.id} task={t} onClick={onSelect ? () => onSelect(t) : undefined} />)}</div>
+  return <div>{tasks.map(t => <WorkflowTaskRow key={t.id} task={t} onClick={onSelect ? () => onSelect(t) : undefined} onAcknowledge={onAcknowledge ? () => onAcknowledge(t.id) : undefined} onComplete={onComplete ? () => onComplete(t.id) : undefined} />)}</div>
 }
 
 // ─── Attachments ────────────────────────────────────────────────────────────────

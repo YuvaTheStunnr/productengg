@@ -1,31 +1,34 @@
 import { useState } from 'react'
 import {
-  PRODUCTS, INITIATIVES, EPICS, STORIES, RELEASES, CYCLES, IDEAS, WORKFLOW_TASKS,
+  PRODUCTS, INITIATIVES, EPICS, STORIES, RELEASES, CYCLES, IDEAS, WORKFLOW_TASKS, HOTFIXES,
   initiativesForProduct, epicsForProduct, storiesForProduct, epicsForInitiative, storiesForEpic,
   initiativeHealth, initiativePct, epicHealth, epicPct, storyHealth, storyPct, releaseHealth, releasePct,
   workflowTasksForSpace, pendingWorkflowCount, testCasesForStory, bugsForStory,
+  hotfixesForProduct, acknowledgeWorkflowTask, completeWorkflowTask,
 } from './data'
 import {
   HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag,
-  ProductSwitcher, WorkflowQueue, EmptyState,
+  ProductSwitcher, WorkflowQueue, EmptyState, Modal,
 } from './ui'
 import {
   IdeaDetail, CreateIdea, InitiativeDetail, CreateInitiative,
-  EpicDetail, CreateEpic, StoryDetail, CreateStory, TaskDetail, BugDetail, TestCaseDetail, ReleaseDetail, CreateRelease,
+  EpicDetail, CreateEpic, StoryDetail, CreateStory, TaskDetail, CreateSubtask, BugDetail, TestCaseDetail, ReleaseDetail, CreateRelease,
+  HotfixList, HotfixDetail, CreateHotfix,
   type Nav,
 } from './entities'
+import { PlanningWorkspace } from './PlanningWorkspace'
 
 type Screen =
   | 'dashboard'
   | 'idea-list' | 'idea-detail' | 'create-idea'
   | 'initiative-list' | 'initiative-detail' | 'create-initiative'
+  | 'planning'
   | 'epic-list' | 'epic-detail' | 'create-epic'
   | 'story-detail' | 'create-story'
   | 'backlog'
   | 'release-list' | 'release-detail' | 'create-release'
-  | 'orchestration'
-  | 'reports'
-  | 'task-detail' | 'bug-detail' | 'test-case-detail'
+  | 'hotfix-list' | 'hotfix-detail' | 'create-hotfix'
+  | 'task-detail' | 'create-subtask' | 'bug-detail' | 'test-case-detail'
 
 // Workflow tasks can point at any level of the hierarchy (a Bug, Story, Epic
 // or Initiative) — route to whichever detail screen actually matches, rather
@@ -51,19 +54,17 @@ function wfDetailScreen(sourceType: 'Bug' | 'Story' | 'Epic' | 'Initiative'): Sc
 function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate: (s: Screen) => void; product: string; setProduct: (p: string) => void }) {
   const backlogCount = storiesForProduct(product).filter(s => s.workflowState === 'Planning' || s.workflowState === 'Draft').length
   const openIdeas = IDEAS.filter(i => i.status === 'Idea').length
-  const pendingWf = pendingWorkflowCount('pm')
   return (
     <SidebarShell
       items={[
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'idea-list', label: 'Ideas', badge: openIdeas || undefined },
         { id: 'initiative-list', label: 'Initiatives' },
+        { id: 'planning', label: 'Planning' },
         { id: 'epic-list', label: 'Epics' },
         { id: 'backlog', label: 'Backlog & Planning', badge: backlogCount },
         { id: 'release-list', label: 'Releases' },
-        { id: 'orchestration', label: 'Orchestration', badge: pendingWf || undefined },
-        { id: 'reports', label: 'Reports' },
-        { id: 'create-initiative', label: '+ New Initiative', action: true } as any,
+        { id: 'hotfix-list', label: 'Hotfixes' },
       ]}
       nav={nav}
       navigate={navigate}
@@ -79,6 +80,7 @@ function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) => void; product: string }) {
+  const [showOrchestration, setShowOrchestration] = useState(false)
   const initiatives = initiativesForProduct(product)
   const stories = storiesForProduct(product)
   const cycle = CYCLES.find(c => c.current && c.productId === product)
@@ -178,9 +180,9 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
               <span className="text-[12px] font-semibold text-[#333]">Workflow Orchestration</span>
-              <Btn small variant="ghost" onClick={() => navigate('orchestration')}>View all →</Btn>
+              <Btn small variant="ghost" onClick={() => setShowOrchestration(true)}>View all →</Btn>
             </div>
-            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(wfDetailScreen(t.sourceType), t.sourceId)} emptyLabel="No pending cross-role tasks" />
+            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(wfDetailScreen(t.sourceType), t.sourceId)} emptyLabel="No pending cross-role tasks" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
           </CardShell>
 
           <CardShell className="p-4">
@@ -213,6 +215,34 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
           </CardShell>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-4 mt-4">
+        <CardShell className="p-4">
+          <SectionLabel>Initiative Progress</SectionLabel>
+          {initiatives.map(init => (
+            <div key={init.id} className="py-1.5">
+              <div className="flex items-center justify-between text-[11px] mb-1"><span className="text-[#555] truncate mr-2">{init.title}</span><span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span></div>
+              <ProgressBar pct={initiativePct(init)} thin />
+            </div>
+          ))}
+          {initiatives.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-1">No initiatives for this product yet.</p>}
+        </CardShell>
+        <CardShell className="p-4">
+          <SectionLabel>Stories by Workflow State</SectionLabel>
+          {(['Draft', 'Planning', 'In Progress', 'Testing', 'Released', 'Paused'] as const).map(ws => {
+            const count = stories.filter(s => s.workflowState === ws).length
+            return (
+              <div key={ws} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{ws}</span><span className="font-medium text-[#333]">{count}</span></div>
+            )
+          })}
+        </CardShell>
+      </div>
+
+      {showOrchestration && (
+        <Modal title="Workflow Orchestration" subtitle="Every cross-role handoff the platform has automatically generated — across all five spaces" onClose={() => setShowOrchestration(false)} wide>
+          <OrchestrationBoard navigate={navigate} />
+        </Modal>
+      )}
     </WorkspaceShell>
   )
 }
@@ -441,14 +471,17 @@ function Backlog({ navigate, product }: { navigate: (s: Screen, id?: string) => 
 }
 
 // ─── Orchestration ──────────────────────────────────────────────────────────────
+// Previously its own nav item + full-screen route; now surfaced as a "View
+// all" modal off the Dashboard's Workflow Orchestration card, since it's a
+// drill-in on the same data rather than a distinct place of work.
 
-function Orchestration({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
+function OrchestrationBoard({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending')
   const filtered = filter === 'all' ? WORKFLOW_TASKS : filter === 'pending' ? WORKFLOW_TASKS.filter(t => t.status !== 'Done') : WORKFLOW_TASKS.filter(t => t.status === 'Done')
   const bySpace = ['leadership', 'pm', 'engineering', 'qa', 'customer-success'] as const
 
   return (
-    <WorkspaceShell title="Orchestration" subtitle="Every cross-role handoff the platform has automatically generated — PM has full visibility across all five spaces">
+    <div>
       <div className="flex items-center gap-2 mb-4">
         {(['pending', 'all', 'done'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors capitalize ${filter === f ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f}</button>
@@ -463,43 +496,12 @@ function Orchestration({ navigate }: { navigate: (s: Screen, id?: string) => voi
                 <span className="text-[12px] font-semibold text-[#333] capitalize">{space}</span>
                 <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
               </div>
-              <WorkflowQueue tasks={tasks} onSelect={t => navigate(wfDetailScreen(t.sourceType), t.sourceId)} emptyLabel="Nothing here" />
+              <WorkflowQueue tasks={tasks} onSelect={t => navigate(wfDetailScreen(t.sourceType), t.sourceId)} emptyLabel="Nothing here" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
             </CardShell>
           )
         })}
       </div>
-    </WorkspaceShell>
-  )
-}
-
-// ─── Reports ────────────────────────────────────────────────────────────────
-
-function Reports({ product }: { product: string }) {
-  const initiatives = initiativesForProduct(product)
-  const stories = storiesForProduct(product)
-  return (
-    <WorkspaceShell title="Reports" subtitle="Delivery rollups for the selected product">
-      <div className="grid grid-cols-2 gap-4">
-        <CardShell className="p-4">
-          <SectionLabel>Initiative Progress</SectionLabel>
-          {initiatives.map(init => (
-            <div key={init.id} className="py-1.5">
-              <div className="flex items-center justify-between text-[11px] mb-1"><span className="text-[#555] truncate mr-2">{init.title}</span><span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span></div>
-              <ProgressBar pct={initiativePct(init)} thin />
-            </div>
-          ))}
-        </CardShell>
-        <CardShell className="p-4">
-          <SectionLabel>Stories by Workflow State</SectionLabel>
-          {(['Draft', 'Planning', 'In Progress', 'Testing', 'Released', 'Paused'] as const).map(ws => {
-            const count = stories.filter(s => s.workflowState === ws).length
-            return (
-              <div key={ws} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{ws}</span><span className="font-medium text-[#333]">{count}</span></div>
-            )
-          })}
-        </CardShell>
-      </div>
-    </WorkspaceShell>
+    </div>
   )
 }
 
@@ -521,6 +523,7 @@ export function PMSpace({ onContextChange }: { onContextChange: (ctx: { title: s
       'initiative-list': { title: 'Initiatives', prompts: ['Compare initiative health', 'Find at-risk items', 'Suggest reprioritisation', 'Export status report'] },
       'initiative-detail': { title: 'Initiative Detail', prompts: ['Break into epics', 'Generate stories', 'Plan release', 'Summarise progress'] },
       'create-initiative': { title: 'New Initiative', prompts: ['Write a business goal', 'Suggest success metrics', 'Estimate timeline', 'Draft initiative brief'] },
+      'planning': { title: 'Planning', prompts: ['Identify scheduling conflicts', 'Which requests are unlinked?', 'Show Q3 milestones', 'Which ideas are ready to convert?'] },
       'epic-list': { title: 'Epics', prompts: ['Summarise epic progress', 'Identify blocked epics'] },
       'epic-detail': { title: 'Epic Detail', prompts: ['Break into stories', 'Write acceptance criteria', 'Estimate points', 'Identify dependencies'] },
       'create-epic': { title: 'New Epic', prompts: ['Break into stories', 'Write acceptance criteria'] },
@@ -530,9 +533,11 @@ export function PMSpace({ onContextChange }: { onContextChange: (ctx: { title: s
       'release-list': { title: 'Releases', prompts: ['Check release readiness', 'Generate release notes'] },
       'release-detail': { title: 'Release Detail', prompts: ['Check release readiness', 'What is blocking this release?', 'Generate release notes', 'Suggest scope cuts'] },
       'create-release': { title: 'New Release', prompts: ['Suggest epics for this release'] },
-      'orchestration': { title: 'Orchestration', prompts: ['Summarise pending workflow tasks', 'What is blocking each space?', 'Prioritise the queue'] },
-      'reports': { title: 'Reports', prompts: ['Summarise delivery for this product', 'Compare cycle velocity'] },
+      'hotfix-list': { title: 'Hotfixes', prompts: ['Summarise recent hotfixes'] },
+      'hotfix-detail': { title: 'Hotfix Detail', prompts: ['Summarise this hotfix'] },
+      'create-hotfix': { title: 'Log Hotfix', prompts: ['Help write up the root cause'] },
       'task-detail': { title: 'Task Detail', prompts: ['Summarise this task', 'Check subtask progress'] },
+      'create-subtask': { title: 'New Subtask', prompts: ['Suggest subtasks for this task'] },
       'bug-detail': { title: 'Bug Detail', prompts: ['Summarise this bug', 'Draft a status update'] },
       'test-case-detail': { title: 'Test Case', prompts: ['Summarise test coverage'] },
     }
@@ -550,6 +555,7 @@ export function PMSpace({ onContextChange }: { onContextChange: (ctx: { title: s
         {nav.screen === 'initiative-list' && <InitiativeList navigate={navigate} product={product} />}
         {nav.screen === 'initiative-detail' && <InitiativeDetail id={nav.id ?? INITIATIVES[0].id} nav={shared} role="pm" />}
         {nav.screen === 'create-initiative' && <CreateInitiative nav={shared} role="pm" />}
+        {nav.screen === 'planning' && <PlanningWorkspace navigate={(s, id) => navigate(s as Screen, id)} product={product} />}
         {nav.screen === 'epic-list' && <EpicList navigate={navigate} product={product} />}
         {nav.screen === 'epic-detail' && <EpicDetail id={nav.id ?? EPICS[0].id} nav={shared} />}
         {nav.screen === 'create-epic' && <CreateEpic nav={shared} initiativeId={nav.id} />}
@@ -559,9 +565,11 @@ export function PMSpace({ onContextChange }: { onContextChange: (ctx: { title: s
         {nav.screen === 'release-list' && <ReleaseList navigate={navigate} />}
         {nav.screen === 'release-detail' && <ReleaseDetail id={nav.id ?? RELEASES[0].id} nav={shared} role="pm" />}
         {nav.screen === 'create-release' && <CreateRelease nav={shared} />}
-        {nav.screen === 'orchestration' && <Orchestration navigate={navigate} />}
-        {nav.screen === 'reports' && <Reports product={product} />}
+        {nav.screen === 'hotfix-list' && <HotfixList nav={shared} productId={product} />}
+        {nav.screen === 'hotfix-detail' && <HotfixDetail id={nav.id ?? HOTFIXES[0].id} nav={shared} />}
+        {nav.screen === 'create-hotfix' && <CreateHotfix nav={shared} productId={product} />}
         {nav.screen === 'task-detail' && <TaskDetail id={nav.id ?? ''} nav={shared} role="pm" />}
+        {nav.screen === 'create-subtask' && <CreateSubtask nav={shared} taskId={nav.id} />}
         {nav.screen === 'bug-detail' && <BugDetail id={nav.id ?? ''} nav={shared} role="pm" />}
         {nav.screen === 'test-case-detail' && <TestCaseDetail id={nav.id ?? ''} nav={shared} role="pm" />}
       </main>

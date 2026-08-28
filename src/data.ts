@@ -11,6 +11,8 @@
 // and the *Health()/*Pct()/*Blocked() helpers below.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { notify } from './store'
+
 // ─── Status Types ─────────────────────────────────────────────────────────────
 
 export type WorkflowState = 'Draft' | 'Planning' | 'In Progress' | 'Testing' | 'Released' | 'Paused'
@@ -87,6 +89,10 @@ export interface Account {
 
 export interface Initiative {
   id: string; title: string; goal: string; description: string; targetDate: string
+  // When work actually kicks off. Optional because it's a newer field —
+  // initiatives created before it was added fall back to inferring a start
+  // from their earliest milestone (see monthPosition() in LeadershipSpace).
+  startDate?: string
   workflowState: WorkflowState
   productIds: string[]
   pm: string; engLead: string; qaLead: string
@@ -103,6 +109,7 @@ export interface Epic {
   assignee: string; storyIds: string[]
   targetDate?: string
   blockedReason?: string
+  notes?: string
   comments: Comment[]; attachments: Attachment[]; activity: ActivityItem[]
 }
 
@@ -115,6 +122,7 @@ export interface Story {
   cycleId?: string; targetDate?: string
   blockedReason?: string
   qaState?: 'Pending' | 'Approved' | 'Rejected' | 'Clarification Requested'
+  notes?: string
   comments: Comment[]; attachments: Attachment[]; activity: ActivityItem[]
 }
 
@@ -129,6 +137,7 @@ export interface Task {
   branch?: string; prNumber?: number
   subtaskIds: string[]
   blockedReason?: string
+  notes?: string
   comments: Comment[]; attachments: Attachment[]; activity: ActivityItem[]
 }
 
@@ -154,9 +163,29 @@ export interface Release {
   id: string; name: string; targetDate: string
   workflowState: WorkflowState
   epicIds: string[]
+  // Individual stories shipped on their own, without waiting for their whole
+  // epic — an incremental release. Most releases still bundle full epics;
+  // this is for the "ship this one story now" case.
+  storyIds: string[]
   gateChecks: { label: string; passed: boolean; note?: string }[]
   description: string
   blockedReason?: string
+  comments: Comment[]; attachments: Attachment[]; activity: ActivityItem[]
+}
+
+// ─── Hotfixes ───────────────────────────────────────────────────────────────
+// Deliberately standalone — tied to a Product, never to an Initiative. A
+// hotfix is an unplanned, out-of-cycle production fix (as opposed to a Bug,
+// which is found by QA against a Story before release). It reads like a
+// release log: why it happened, what the fix was, who shipped it.
+
+export interface Hotfix {
+  id: string; title: string; productId: string
+  severity: Priority
+  rootCause: string; fixSummary: string
+  reportedBy: string; assignee: string
+  status: 'Open' | 'In Progress' | 'Shipped'
+  createdAt: string; shippedAt?: string
   comments: Comment[]; attachments: Attachment[]; activity: ActivityItem[]
 }
 
@@ -675,7 +704,7 @@ export const EPICS: Epic[] = [
 export const INITIATIVES: Initiative[] = [
   {
     id: 'init-1', title: 'Onboarding Redesign', goal: 'Reduce first-session drop-off by 30% through a redesigned onboarding experience that guides users to their first value moment within 3 minutes.',
-    targetDate: 'Sep 30, 2026', workflowState: 'In Progress',
+    targetDate: 'Sep 30, 2026', startDate: 'Jun 2, 2026', workflowState: 'In Progress',
     productIds: ['prod-dxone'],
     pm: 'Alex Chen', engLead: 'Sam Liu', qaLead: 'Dana Rao',
     epicIds: ['epic-1', 'epic-2', 'epic-3', 'epic-4'],
@@ -696,7 +725,7 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: 'init-2', title: 'Payment v2', goal: 'Support Apple Pay and saved payment methods to increase checkout conversion by 15%.',
-    targetDate: 'Sep 30, 2026', workflowState: 'In Progress',
+    targetDate: 'Sep 30, 2026', startDate: 'Jul 14, 2026', workflowState: 'In Progress',
     productIds: ['prod-dxone'],
     pm: 'Alex Chen', engLead: 'Jordan Mills', qaLead: 'Priya Sinha',
     epicIds: ['epic-5', 'epic-6', 'epic-7'],
@@ -714,7 +743,7 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: 'init-3', title: 'Analytics Dashboard', goal: 'Give the operations team self-serve reporting on DAU, retention, and feature adoption.',
-    targetDate: 'Dec 15, 2026', workflowState: 'Planning',
+    targetDate: 'Dec 15, 2026', startDate: 'Aug 18, 2026', workflowState: 'Planning',
     productIds: ['prod-reporting'],
     pm: 'Alex Chen', engLead: 'Jordan Mills', qaLead: 'Dana Rao',
     epicIds: ['epic-8'],
@@ -729,7 +758,7 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: 'init-4', title: 'Performance Hardening', goal: 'Reduce P99 API latency to under 200ms across all core endpoints.',
-    targetDate: 'Nov 1, 2026', workflowState: 'In Progress',
+    targetDate: 'Nov 1, 2026', startDate: 'Jul 1, 2026', workflowState: 'In Progress',
     productIds: ['prod-dxone', 'prod-stunnr'],
     pm: 'Alex Chen', engLead: 'Jordan Mills', qaLead: 'Dana Rao',
     epicIds: ['epic-9'],
@@ -744,7 +773,7 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: 'init-5', title: 'Dark Mode', goal: 'Ship native dark mode across iOS and Android in a single release.',
-    targetDate: 'Oct 15, 2026', workflowState: 'Draft',
+    targetDate: 'Oct 15, 2026', startDate: 'Sep 20, 2026', workflowState: 'Draft',
     productIds: ['prod-dxone', 'prod-stunnr'],
     pm: 'Alex Chen', engLead: 'Unassigned', qaLead: 'Unassigned',
     epicIds: [],
@@ -755,7 +784,7 @@ export const INITIATIVES: Initiative[] = [
   },
   {
     id: 'init-6', title: 'Unified Authentication', goal: 'One identity across DXOne, Stunnr and Reporting — including enterprise SSO — to close enterprise deals and cut login-related support volume in half.',
-    targetDate: 'Dec 1, 2026', workflowState: 'In Progress',
+    targetDate: 'Dec 1, 2026', startDate: 'Jul 1, 2026', workflowState: 'In Progress',
     productIds: ['prod-dxone', 'prod-stunnr', 'prod-reporting'],
     pm: 'Alex Chen', engLead: 'Jordan Mills', qaLead: 'Priya Sinha',
     epicIds: ['epic-10', 'epic-11'],
@@ -777,7 +806,7 @@ export const INITIATIVES: Initiative[] = [
 export const RELEASES: Release[] = [
   {
     id: 'rel-1', name: 'v2.4.1 Beta', targetDate: 'Aug 14, 2026', workflowState: 'Testing',
-    epicIds: ['epic-1', 'epic-2', 'epic-5'],
+    epicIds: ['epic-1', 'epic-2', 'epic-5'], storyIds: [],
     description: 'Beta release covering completed onboarding epics and the checkout redesign. Internal distribution only.',
     gateChecks: [
       { label: 'All P0 bugs resolved', passed: false, note: '2 critical bugs open (bug-1, bug-4)' },
@@ -791,7 +820,7 @@ export const RELEASES: Release[] = [
   },
   {
     id: 'rel-2', name: 'v2.4.1 GA', targetDate: 'Aug 28, 2026', workflowState: 'Planning',
-    epicIds: ['epic-1', 'epic-2', 'epic-3', 'epic-5'],
+    epicIds: ['epic-1', 'epic-2', 'epic-3', 'epic-5'], storyIds: [],
     description: 'General availability including Feature Tour. Requires beta sign-off as prerequisite.',
     gateChecks: [
       { label: 'Beta sign-off completed', passed: false },
@@ -804,7 +833,7 @@ export const RELEASES: Release[] = [
   },
   {
     id: 'rel-3', name: 'v3.0', targetDate: 'Sep 30, 2026', workflowState: 'Draft',
-    epicIds: ['epic-1', 'epic-2', 'epic-3', 'epic-4', 'epic-6', 'epic-7'],
+    epicIds: ['epic-1', 'epic-2', 'epic-3', 'epic-4', 'epic-6', 'epic-7'], storyIds: [],
     description: 'Full Onboarding Redesign + Payment v2 in a single major release.',
     gateChecks: [
       { label: 'All epics code complete', passed: false },
@@ -814,6 +843,32 @@ export const RELEASES: Release[] = [
       { label: 'Marketing assets ready', passed: false },
     ],
     comments: [], attachments: [], activity: [],
+  },
+]
+
+// ─── Seed: Hotfixes ─────────────────────────────────────────────────────────────
+// Standalone production fixes — tied to a product, not an initiative. Logged
+// by the engineer who shipped the fix, reads like a release log entry: why
+// it happened, what changed.
+
+export const HOTFIXES: Hotfix[] = [
+  {
+    id: 'hotfix-1', title: 'Push notification crash on Android 14', productId: 'prod-dxone',
+    severity: 'Critical',
+    rootCause: 'A null notification payload from the FCM SDK on Android 14 devices caused an unhandled exception on cold start, crashing the app before the main bundle loaded.',
+    fixSummary: 'Added a null guard around notification payload parsing in the launch path and shipped as an out-of-cycle patch to the Play Store.',
+    reportedBy: 'Morgan Tse', assignee: 'Morgan Tse', status: 'Shipped',
+    createdAt: 'Aug 19, 2026', shippedAt: 'Aug 20, 2026',
+    comments: [], attachments: [], activity: [mkAct('act-hf1a', 'Morgan Tse', 'Engineering', 'logged this hotfix', 'Aug 19, 2026'), mkAct('act-hf1b', 'Morgan Tse', 'Engineering', 'shipped the fix', 'Aug 20, 2026')],
+  },
+  {
+    id: 'hotfix-2', title: 'Expired TLS cert on the reporting API gateway', productId: 'prod-reporting',
+    severity: 'High',
+    rootCause: 'The reporting API gateway certificate auto-renewal job silently failed 30 days before expiry; the cert lapsed at midnight UTC, taking down all reporting exports.',
+    fixSummary: 'Manually renewed and redeployed the certificate, then fixed the renewal job\'s failure alerting so this is caught with 14 days of runway next time.',
+    reportedBy: 'Jordan Mills', assignee: 'Jordan Mills', status: 'In Progress',
+    createdAt: 'Aug 25, 2026',
+    comments: [], attachments: [], activity: [mkAct('act-hf2a', 'Jordan Mills', 'Engineering', 'logged this hotfix', 'Aug 25, 2026')],
   },
 ]
 
@@ -936,6 +991,7 @@ export function initiativeHealth(init: Initiative): Health {
 }
 
 export function releasePct(rel: Release): number {
+  if (rel.gateChecks.length === 0) return 0
   return Math.round((rel.gateChecks.filter(g => g.passed).length / rel.gateChecks.length) * 100)
 }
 export function releaseBlocked(rel: Release): boolean {
@@ -959,6 +1015,9 @@ export const getBug = (id: string) => BUGS.find(b => b.id === id)!
 export const getTestCase = (id: string) => TEST_CASES.find(t => t.id === id)!
 export const getRelease = (id: string) => RELEASES.find(r => r.id === id)!
 export const getCycle = (id: string) => CYCLES.find(c => c.id === id)
+export const getHotfix = (id: string) => HOTFIXES.find(h => h.id === id)!
+export const hotfixesForProduct = (productId: string | 'all') =>
+  productId === 'all' ? HOTFIXES : HOTFIXES.filter(h => h.productId === productId)
 
 export const storyBreadcrumb = (story: Story) => {
   const epic = getEpic(story.epicId)
@@ -1036,4 +1095,460 @@ export function requestStageNarrative(stage: RequestStatus): string {
     'Rejected': 'Not being pursued.',
   }
   return map[stage]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Mutations — session-only state changes
+//
+// Everything above this line reads the seed arrays. Everything below writes
+// to them: creating new entities, and moving existing ones through their
+// workflow. STORIES / EPICS / BUGS / etc. are plain mutable arrays, so a
+// mutation just pushes or edits an object directly — there's no separate
+// database. Every mutation ends with notify() (see store.ts), which is what
+// tells React something changed, since none of this lives in React state.
+//
+// This makes the prototype's buttons actually do something for the rest of
+// your session. It is still not a real backend: it resets on reload, there's
+// no server, and there's no concurrent-user handling.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let idSeq = 1000
+function nextId(prefix: string): string {
+  idSeq += 1
+  return `${prefix}-${idSeq}`
+}
+
+function emptyThread() {
+  return { comments: [] as Comment[], attachments: [] as Attachment[], activity: [] as ActivityItem[] }
+}
+
+function addActivity<T extends { activity: ActivityItem[] }>(entity: T, who: string, role: string, action: string) {
+  entity.activity.unshift({ id: nextId('act'), who, role, action, time: 'just now' })
+}
+
+// ─── Workflow Orchestration: auto-generated task creation ─────────────────────
+// Mirrors the trigger table in the IA doc (Section 3.6): whenever one of
+// these actions fires, the matching cross-role task is opened automatically.
+
+function addWorkflowTask(input: Omit<WorkflowTask, 'id' | 'createdAt' | 'status'>) {
+  WORKFLOW_TASKS.unshift({ id: nextId('wf'), createdAt: 'just now', status: 'Pending', ...input })
+}
+
+export function acknowledgeWorkflowTask(id: string) {
+  const t = WORKFLOW_TASKS.find(w => w.id === id)
+  if (t && t.status === 'Pending') t.status = 'Acknowledged'
+  notify()
+}
+export function completeWorkflowTask(id: string) {
+  const t = WORKFLOW_TASKS.find(w => w.id === id)
+  if (t) t.status = 'Done'
+  notify()
+}
+
+// ─── Create ─────────────────────────────────────────────────────────────────
+
+export function createIdea(input: { title: string; description: string; createdBy: string; createdByRole: string }): Idea {
+  const idea: Idea = {
+    id: nextId('idea'), title: input.title, description: input.description,
+    status: 'Idea', createdBy: input.createdBy, createdByRole: input.createdByRole, createdAt: 'just now',
+    ...emptyThread(),
+  }
+  addActivity(idea, input.createdBy, input.createdByRole, 'created this idea')
+  IDEAS.unshift(idea)
+  notify()
+  return idea
+}
+
+export function createCustomerRequest(input: { title: string; description: string; source: CustomerRequest['source']; priority: Priority; accountId?: string; requestedBy: string }): CustomerRequest {
+  const req: CustomerRequest = {
+    id: nextId('cr'), title: input.title, description: input.description, source: input.source,
+    requestedBy: input.requestedBy, accountId: input.accountId, requestedAt: 'just now',
+    priority: input.priority, stage: 'New', initiativeIds: [],
+    ...emptyThread(),
+  }
+  addActivity(req, input.requestedBy, 'Customer Success', 'logged this request')
+  CUSTOMER_REQUESTS.unshift(req)
+  notify()
+  return req
+}
+
+export function moveCustomerRequestStage(id: string, stage: RequestStatus) {
+  const req = getCustomerRequest(id)
+  if (!req) return
+  req.stage = stage
+  addActivity(req, 'Nina Patel', 'Customer Success', `moved to ${stage}`)
+  notify()
+}
+
+// Replaces the full set of linked initiatives at once — backs the CR →
+// Initiative "Link" picker, which is multi-select (a request can inform more
+// than one initiative).
+export function setRequestInitiatives(id: string, initiativeIds: string[]) {
+  const req = getCustomerRequest(id)
+  if (!req) return
+  req.initiativeIds = initiativeIds
+  addActivity(req, 'Nina Patel', 'Customer Success', initiativeIds.length
+    ? `linked this request to ${initiativeIds.map(iid => getInitiative(iid)?.title).filter(Boolean).join(', ')}`
+    : 'unlinked this request from all initiatives')
+  notify()
+}
+
+export function createInitiative(input: {
+  title: string; goal: string; description?: string; targetDate: string; startDate?: string; productIds: string[]
+  pm?: string; engLead?: string; qaLead?: string; originatingIdeaId?: string
+}): Initiative {
+  const init: Initiative = {
+    id: nextId('init'), title: input.title, goal: input.goal, description: input.description ?? '',
+    targetDate: input.targetDate, startDate: input.startDate || undefined, workflowState: 'Draft', productIds: input.productIds,
+    pm: input.pm || 'Unassigned', engLead: input.engLead || 'Unassigned', qaLead: input.qaLead || 'Unassigned',
+    epicIds: [], milestones: [], risks: [],
+    ...emptyThread(),
+  }
+  addActivity(init, input.pm || 'Alex Chen', 'PM', 'created this initiative')
+  INITIATIVES.unshift(init)
+  if (input.originatingIdeaId) {
+    const idea = getIdea(input.originatingIdeaId)
+    if (idea) {
+      idea.status = 'Converted'
+      idea.initiativeId = init.id
+      addActivity(idea, input.pm || 'Alex Chen', 'PM', `converted this idea into ${init.title}`)
+    }
+  }
+  notify()
+  return init
+}
+
+export function createEpic(input: { title: string; initiativeId: string; description?: string; assignee?: string; targetDate?: string; notes?: string; mockLink?: string }): Epic {
+  const epic: Epic = {
+    id: nextId('epic'), initiativeId: input.initiativeId, title: input.title, description: input.description ?? '',
+    workflowState: 'Draft', assignee: input.assignee || 'Unassigned', storyIds: [],
+    targetDate: input.targetDate, notes: input.notes,
+    ...emptyThread(),
+  }
+  if (input.mockLink) epic.attachments.push(mkAtt(nextId('att'), input.mockLink, 'link', 'Mock / wireframe', input.assignee || 'PM', 'just now'))
+  addActivity(epic, 'Alex Chen', 'PM', 'created this epic')
+  EPICS.unshift(epic)
+  getInitiative(input.initiativeId)?.epicIds.push(epic.id)
+  notify()
+  return epic
+}
+
+export function createStory(input: { title: string; epicId: string; description?: string; acceptanceCriteria?: string[]; assignee?: string; points?: number; targetDate?: string; notes?: string; mockLink?: string; createdByRole?: string }): Story {
+  const story: Story = {
+    id: nextId('story'), epicId: input.epicId, title: input.title, description: input.description ?? '',
+    acceptanceCriteria: input.acceptanceCriteria ?? [],
+    workflowState: 'Draft', points: input.points ?? 3, assignee: input.assignee || 'Unassigned',
+    taskIds: [], testCaseIds: [], bugIds: [], targetDate: input.targetDate, notes: input.notes,
+    ...emptyThread(),
+  }
+  if (input.mockLink) story.attachments.push(mkAtt(nextId('att'), input.mockLink, 'link', 'Mock / wireframe', input.assignee || 'PM', 'just now'))
+  addActivity(story, input.assignee || 'Alex Chen', input.createdByRole ?? 'PM', 'created this story')
+  STORIES.unshift(story)
+  getEpic(input.epicId)?.storyIds.push(story.id)
+  notify()
+  return story
+}
+
+export function createTask(input: { title: string; storyId: string; description?: string; assignee?: string; estimate?: number; notes?: string }): Task {
+  const task: Task = {
+    id: nextId('task'), storyId: input.storyId, title: input.title, description: input.description ?? '',
+    assignee: input.assignee || 'Unassigned', estimate: input.estimate ?? 4,
+    workflowState: 'Planning', subtaskIds: [], notes: input.notes,
+    ...emptyThread(),
+  }
+  addActivity(task, input.assignee || 'Morgan Tse', 'Engineering', 'created this task')
+  TASKS.unshift(task)
+  const story = getStory(input.storyId)
+  if (story) {
+    story.taskIds.push(task.id)
+    // "Engineering splits a Story into Tasks" → PM gets a Story Review task
+    // (Section 3.6). Fires every time a task is added under a story.
+    addWorkflowTask({
+      type: 'Story Review', title: `Review task split on ${story.id.toUpperCase()} — ${story.title}`,
+      detail: `Engineering added a task to this story. PM should confirm scope still matches the original story.`,
+      targetSpace: 'pm', assignee: 'Alex Chen', sourceType: 'Story', sourceId: story.id,
+      triggeredBy: `Engineering added a task to ${story.id.toUpperCase()}`,
+    })
+  }
+  notify()
+  return task
+}
+
+export function createSubtask(taskId: string, title: string, assignee?: string) {
+  const sub: Subtask = { id: nextId('sub'), taskId, title, done: false, assignee }
+  SUBTASKS.push(sub)
+  const task = getTask(taskId)
+  if (task) task.subtaskIds.push(sub.id)
+  notify()
+  return sub
+}
+
+export function createBug(input: { title: string; storyId?: string; severity: Priority; expectedResult: string; actualResult: string; reproSteps: string[]; environment?: string; reporter?: string }): Bug {
+  const story = input.storyId ? getStory(input.storyId) : undefined
+  const bug: Bug = {
+    id: nextId('bug'), title: input.title, storyId: input.storyId, epicId: story?.epicId,
+    severity: input.severity, workflowState: 'Open',
+    assignee: story?.assignee && story.assignee !== 'Unassigned' ? story.assignee : 'Unassigned',
+    reporter: input.reporter || 'Dana Rao',
+    reproSteps: input.reproSteps, expectedResult: input.expectedResult, actualResult: input.actualResult,
+    environment: input.environment ?? '', linkedTestCaseIds: [],
+    ...emptyThread(),
+  }
+  addActivity(bug, bug.reporter, 'QA', 'logged this bug')
+  BUGS.unshift(bug)
+  if (story) story.bugIds.push(bug.id)
+  // "Logging a bug automatically opens a Bug Fix task for the assigned
+  // engineer" — this is the one line of copy on the Log Bug screen that
+  // previously didn't actually happen.
+  addWorkflowTask({
+    type: 'Bug Fix', title: `Fix ${bug.id.toUpperCase()} — ${bug.title}`,
+    detail: `${bug.reporter} logged a ${bug.severity} bug${story ? ` against ${story.id.toUpperCase()}` : ''}. Engineering owns the fix.`,
+    targetSpace: 'engineering', assignee: bug.assignee, sourceType: 'Bug', sourceId: bug.id,
+    triggeredBy: `QA logged ${bug.id.toUpperCase()}`,
+  })
+  notify()
+  return bug
+}
+
+export function createTestCase(input: { title: string; storyId: string; steps: { step: string; expected: string }[]; assignee?: string }): TestCase {
+  const tc: TestCase = {
+    id: nextId('tc'), title: input.title, storyId: input.storyId,
+    steps: input.steps, status: 'Not Run', assignee: input.assignee || 'Dana Rao', linkedBugIds: [],
+    ...emptyThread(),
+  }
+  addActivity(tc, tc.assignee, 'QA', 'created this test case')
+  TEST_CASES.unshift(tc)
+  getStory(input.storyId)?.testCaseIds.push(tc.id)
+  notify()
+  return tc
+}
+
+// A reasonable default set of gate checks offered on Create Release — kept
+// as plain labels rather than a fixed enum so PM can still add a custom one.
+export const RELEASE_GATE_LABELS = [
+  'All P0 bugs resolved',
+  'Regression suite ≥ 90% pass rate',
+  'Performance sign-off',
+  'Accessibility audit complete',
+  'Security review signed off',
+  'QA lead approval',
+]
+
+export function createRelease(input: { name: string; targetDate: string; description?: string; epicIds: string[]; storyIds: string[]; gateLabels: string[] }): Release {
+  const rel: Release = {
+    id: nextId('rel'), name: input.name, targetDate: input.targetDate, workflowState: 'Draft',
+    epicIds: input.epicIds, storyIds: input.storyIds,
+    gateChecks: input.gateLabels.map(label => ({ label, passed: false })),
+    description: input.description ?? '',
+    ...emptyThread(),
+  }
+  addActivity(rel, 'Alex Chen', 'PM', 'created this release')
+  RELEASES.unshift(rel)
+  notify()
+  return rel
+}
+
+export function toggleGateCheck(releaseId: string, index: number): void {
+  const rel = getRelease(releaseId)
+  const gate = rel?.gateChecks[index]
+  if (!rel || !gate) return
+  gate.passed = !gate.passed
+  if (gate.passed) gate.note = undefined
+  addActivity(rel, 'Dana Rao', 'QA', `${gate.passed ? 'passed' : 'reopened'} the "${gate.label}" gate check`)
+  notify()
+}
+
+export function approveRelease(releaseId: string): void {
+  const rel = getRelease(releaseId)
+  if (!rel) return
+  rel.workflowState = 'Released'
+  addActivity(rel, 'Alex Chen', 'PM', 'approved and shipped this release')
+  notify()
+}
+
+export function createHotfix(input: { title: string; productId: string; severity: Priority; rootCause: string; fixSummary: string; reportedBy: string }): Hotfix {
+  const hf: Hotfix = {
+    id: nextId('hotfix'), title: input.title, productId: input.productId, severity: input.severity,
+    rootCause: input.rootCause, fixSummary: input.fixSummary,
+    reportedBy: input.reportedBy, assignee: input.reportedBy, status: 'Shipped', createdAt: 'just now', shippedAt: 'just now',
+    ...emptyThread(),
+  }
+  addActivity(hf, input.reportedBy, 'Engineering', 'logged and shipped this hotfix')
+  HOTFIXES.unshift(hf)
+  notify()
+  return hf
+}
+
+// ─── Workflow state transitions ────────────────────────────────────────────
+
+export function planStoryIntoCycle(storyId: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  const epic = getEpic(story.epicId)
+  const init = epic ? getInitiative(epic.initiativeId) : undefined
+  const productId = init?.productIds[0]
+  const cycle = CYCLES.find(c => c.current && c.productId === productId)
+  if (cycle) {
+    if (!cycle.storyIds.includes(story.id)) cycle.storyIds.push(story.id)
+    story.cycleId = cycle.id
+  }
+  if (story.workflowState === 'Draft') story.workflowState = 'Planning'
+  addActivity(story, 'Alex Chen', 'PM', cycle ? `planned this story into ${cycle.name}` : 'planned this story (no active cycle for this product)')
+  notify()
+}
+
+export function moveStoryToQA(storyId: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  story.workflowState = 'Testing'
+  story.qaState = 'Pending'
+  addActivity(story, 'Morgan Tse', 'Engineering', 'moved story to QA')
+  addWorkflowTask({
+    type: 'Validation', title: `Validate ${story.id.toUpperCase()} — ${story.title}`,
+    detail: `Engineering moved this story to QA.`,
+    targetSpace: 'qa', assignee: 'Dana Rao', sourceType: 'Story', sourceId: story.id,
+    triggeredBy: `Engineering moved ${story.id.toUpperCase()} to QA`,
+  })
+  notify()
+}
+
+export function approveStory(storyId: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  story.qaState = 'Approved'
+  addActivity(story, 'Dana Rao', 'QA', 'approved this story')
+  addWorkflowTask({
+    type: 'Smoke Test / UAT', title: `Sign off ${story.id.toUpperCase()} — ${story.title}`,
+    detail: `QA approved this story. PM sign-off required before it counts toward release readiness.`,
+    targetSpace: 'pm', assignee: 'Alex Chen', sourceType: 'Story', sourceId: story.id,
+    triggeredBy: `QA approved ${story.id.toUpperCase()}`,
+  })
+  notify()
+}
+
+export function rejectStory(storyId: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  story.qaState = 'Rejected'
+  story.workflowState = 'In Progress'
+  addActivity(story, 'Dana Rao', 'QA', 'rejected this story — sent back to Engineering')
+  notify()
+}
+
+export function requestStoryClarification(storyId: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  story.qaState = 'Clarification Requested'
+  addActivity(story, 'Dana Rao', 'QA', 'requested clarification on this story')
+  addWorkflowTask({
+    type: 'Clarification', title: `Clarify requirements on ${story.id.toUpperCase()}`,
+    detail: `QA requested clarification before continuing test coverage on this story.`,
+    targetSpace: 'pm', assignee: 'Alex Chen', sourceType: 'Story', sourceId: story.id,
+    triggeredBy: `QA requested clarification on ${story.id.toUpperCase()}`,
+  })
+  notify()
+}
+
+// "Engineering blocks/moves a Story or Epic tied to a linked Customer
+// Request" → Customer Success gets a Customer Update task (Section 3.6,
+// the newest row in the trigger table).
+export function raiseStoryBlocker(storyId: string, reason: string) {
+  const story = getStory(storyId)
+  if (!story) return
+  story.blockedReason = reason
+  addActivity(story, 'Morgan Tse', 'Engineering', 'raised a blocker on this story')
+  const epic = getEpic(story.epicId)
+  const init = epic ? getInitiative(epic.initiativeId) : undefined
+  if (init) {
+    for (const req of requestsForInitiative(init)) {
+      const account = req.accountId ? getAccount(req.accountId) : undefined
+      addWorkflowTask({
+        type: 'Customer Update', title: `Update ${account ? account.name : 'customer'} on ${init.title} — blocked`,
+        detail: `${reason} This affects ${req.title}${account ? `, linked to ${account.name}` : ''}. Share a revised timeline once Engineering confirms an ETA.`,
+        targetSpace: 'customer-success', assignee: 'Nina Patel', sourceType: 'Story', sourceId: story.id,
+        triggeredBy: `Engineering flagged ${story.id.toUpperCase()} as blocked`,
+      })
+    }
+  }
+  notify()
+}
+
+export function markTaskDone(taskId: string) {
+  const task = getTask(taskId)
+  if (!task) return
+  task.workflowState = 'Released'
+  addActivity(task, task.assignee, 'Engineering', 'marked this task done')
+  notify()
+}
+
+export function setTaskWorkflowState(taskId: string, state: WorkflowState) {
+  const task = getTask(taskId)
+  if (!task) return
+  task.workflowState = state
+  addActivity(task, task.assignee, 'Engineering', `moved to ${state}`)
+  notify()
+}
+
+export function markBugInFix(bugId: string) {
+  const bug = getBug(bugId)
+  if (!bug) return
+  bug.workflowState = 'In Fix'
+  addActivity(bug, bug.assignee, 'Engineering', 'started work on this bug')
+  notify()
+}
+
+export function markBugFixed(bugId: string) {
+  const bug = getBug(bugId)
+  if (!bug) return
+  bug.workflowState = 'Fixed'
+  addActivity(bug, bug.assignee, 'Engineering', 'marked this bug fixed')
+  notify()
+}
+
+export function markBugVerified(bugId: string) {
+  const bug = getBug(bugId)
+  if (!bug) return
+  bug.workflowState = 'Verified'
+  addActivity(bug, bug.reporter, 'QA', 'verified the fix')
+  notify()
+}
+
+export function closeBugAsDuplicate(bugId: string) {
+  const bug = getBug(bugId)
+  if (!bug) return
+  bug.workflowState = 'Closed'
+  addActivity(bug, bug.reporter, 'QA', 'closed this bug as a duplicate')
+  notify()
+}
+
+export function requestBugFix(bugId: string) {
+  const bug = getBug(bugId)
+  if (!bug) return
+  const existing = workflowTasksForSource('Bug', bug.id).find(w => w.type === 'Bug Fix' && w.status !== 'Done')
+  if (!existing) {
+    addWorkflowTask({
+      type: 'Bug Fix', title: `Fix ${bug.id.toUpperCase()} — ${bug.title}`,
+      detail: `QA re-requested a fix for this bug.`,
+      targetSpace: 'engineering', assignee: bug.assignee, sourceType: 'Bug', sourceId: bug.id,
+      triggeredBy: `QA re-requested a fix on ${bug.id.toUpperCase()}`,
+    })
+  }
+  addActivity(bug, bug.reporter, 'QA', 'requested a fix')
+  notify()
+}
+
+export function setTestCaseStatus(tcId: string, status: TestCase['status']) {
+  const tc = getTestCase(tcId)
+  if (!tc) return
+  tc.status = status
+  tc.lastRun = 'just now'
+  addActivity(tc, tc.assignee, 'QA', `marked this test case ${status.toLowerCase()}`)
+  notify()
+}
+
+// Backs the Notes field added to Epic/Story/Task — a lightweight, editable
+// scratchpad distinct from Description and Acceptance Criteria.
+export function updateNotes(entity: { notes?: string }, notes: string) {
+  entity.notes = notes
+  notify()
 }

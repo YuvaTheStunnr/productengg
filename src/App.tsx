@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import type { Space } from './data'
+import { subscribeStore, getStoreVersion } from './store'
 import { LeadershipSpace } from './LeadershipSpace'
 import { PMSpace } from './PMSpace'
 import { EngineeringSpace } from './EngineeringSpace'
@@ -280,6 +281,11 @@ function AICollapseButton({ onOpen }: { onOpen: () => void }) {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // Re-renders the whole tree whenever a mutation anywhere in data.ts fires
+  // notify() — see store.ts. Buttons like "Approve Story" or "Log Bug"
+  // mutate the underlying arrays directly; this is what makes that show up
+  // on screen without threading state through every component.
+  useSyncExternalStore(subscribeStore, getStoreVersion, getStoreVersion)
   const [space, setSpace] = useState<Space>('leadership')
   const [aiOpen, setAIOpen] = useState(true)
   const [aiContext, setAIContext] = useState<AIContext>({

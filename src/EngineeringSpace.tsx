@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import {
-  PRODUCTS, STORIES, TASKS, EPICS, CYCLES, RELEASES,
+  PRODUCTS, STORIES, TASKS, EPICS, CYCLES, RELEASES, HOTFIXES,
   storiesForProduct, tasksForStory, taskHealth, taskPct, storyHealth, releaseHealth,
-  workflowTasksForSpace,
+  workflowTasksForSpace, acknowledgeWorkflowTask, completeWorkflowTask,
 } from './data'
 import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, ProductSwitcher, WorkflowQueue, EmptyState } from './ui'
-import { StoryDetail, CreateStory, TaskDetail, CreateTask, BugDetail, ReleaseDetail, type Nav } from './entities'
+import { StoryDetail, CreateStory, TaskDetail, CreateTask, CreateSubtask, BugDetail, ReleaseDetail, HotfixList, HotfixDetail, CreateHotfix, type Nav } from './entities'
 
-type Screen = 'dashboard' | 'my-tasks' | 'board' | 'story-list' | 'story-detail' | 'create-story' | 'task-detail' | 'create-task' | 'release-list' | 'release-detail' | 'bug-detail'
+type Screen = 'dashboard' | 'my-tasks' | 'board' | 'story-list' | 'story-detail' | 'create-story' | 'task-detail' | 'create-task' | 'create-subtask' | 'release-list' | 'release-detail' | 'bug-detail' | 'hotfix-list' | 'hotfix-detail' | 'create-hotfix'
 
 const ME = 'Morgan Tse'
 
@@ -21,6 +21,7 @@ function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate
         { id: 'board', label: 'Board' },
         { id: 'story-list', label: 'Stories' },
         { id: 'release-list', label: 'Releases' },
+        { id: 'hotfix-list', label: 'Hotfixes' },
       ]}
       nav={nav}
       navigate={navigate}
@@ -112,7 +113,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">Workflow Tasks for You</span></div>
-            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(t.sourceType === 'Bug' ? 'bug-detail' : 'story-detail', t.sourceId)} emptyLabel="No cross-role tasks right now" />
+            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(t.sourceType === 'Bug' ? 'bug-detail' : 'story-detail', t.sourceId)} emptyLabel="No cross-role tasks right now" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
           </CardShell>
 
           <CardShell className="p-4">
@@ -307,9 +308,13 @@ export function EngineeringSpace({ onContextChange }: { onContextChange: (ctx: {
       'create-story': { title: 'New Story', prompts: ['Suggest acceptance criteria', 'Estimate points'] },
       'task-detail':  { title: 'Task Detail', prompts: ['Explain this requirement', 'Create implementation plan', 'Break into subtasks', 'Review implementation'] },
       'create-task':  { title: 'New Task', prompts: ['Suggest an estimate', 'Break into subtasks'] },
+      'create-subtask': { title: 'New Subtask', prompts: ['Suggest subtasks for this task'] },
       'release-list': { title: 'Releases', prompts: ['What ships in the next release?'] },
       'release-detail': { title: 'Release Detail', prompts: ['What is blocking this release?'] },
       'bug-detail':   { title: 'Bug Detail', prompts: ['Suggest a root cause', 'Draft a fix plan'] },
+      'hotfix-list':  { title: 'Hotfixes', prompts: ['Summarise recent hotfixes'] },
+      'hotfix-detail': { title: 'Hotfix Detail', prompts: ['Summarise this hotfix'] },
+      'create-hotfix': { title: 'Log Hotfix', prompts: ['Help write up the root cause'] },
     }
     onContextChange({ ...ctxMap[screen], product: productName })
   }
@@ -326,9 +331,13 @@ export function EngineeringSpace({ onContextChange }: { onContextChange: (ctx: {
         {nav.screen === 'create-story' && <CreateStory nav={shared} role="engineering" />}
         {nav.screen === 'task-detail' && <TaskDetail id={nav.id ?? TASKS[1].id} nav={shared} role="engineering" />}
         {nav.screen === 'create-task' && <CreateTask nav={shared} storyId={nav.id} />}
+        {nav.screen === 'create-subtask' && <CreateSubtask nav={shared} taskId={nav.id} />}
         {nav.screen === 'release-list' && <ReleaseList navigate={navigate} />}
         {nav.screen === 'release-detail' && <ReleaseDetail id={nav.id ?? RELEASES[0].id} nav={shared} role="engineering" />}
         {nav.screen === 'bug-detail' && <BugDetail id={nav.id ?? ''} nav={shared} role="engineering" />}
+        {nav.screen === 'hotfix-list' && <HotfixList nav={shared} productId={product} />}
+        {nav.screen === 'hotfix-detail' && <HotfixDetail id={nav.id ?? HOTFIXES[0].id} nav={shared} />}
+        {nav.screen === 'create-hotfix' && <CreateHotfix nav={shared} productId={product} />}
       </main>
     </div>
   )

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import {
   PRODUCTS, INITIATIVES, EPICS, STORIES, BUGS, TEST_CASES, RELEASES,
-  storiesForProduct, storyHealth, releaseHealth, releasePct, workflowTasksForSpace,
+  storiesForProduct, storyHealth, releaseHealth, releasePct, workflowTasksForSpace, acknowledgeWorkflowTask, completeWorkflowTask,
+  toggleGateCheck, approveRelease,
 } from './data'
 import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, SeverityBadge, ProductSwitcher, WorkflowQueue, EmptyState } from './ui'
 import { StoryDetail, BugDetail, CreateBug, TestCaseDetail, CreateTestCase, type Nav } from './entities'
@@ -100,7 +101,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0]"><span className="text-[12px] font-semibold text-[#333]">Workflow Tasks for You</span></div>
-            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(t.sourceType === 'Bug' ? 'bug-detail' : 'story-detail', t.sourceId)} emptyLabel="No validation tasks pending" />
+            <WorkflowQueue tasks={wfQueue} onSelect={t => navigate(t.sourceType === 'Bug' ? 'bug-detail' : 'story-detail', t.sourceId)} emptyLabel="No validation tasks pending" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
           </CardShell>
 
           <CardShell className="p-4">
@@ -240,7 +241,7 @@ function ReleaseReadiness({ navigate }: { navigate: (s: Screen, id?: string) => 
   const gatePct = releasePct(rel)
 
   return (
-    <WorkspaceShell title="Release Readiness" subtitle="Gate-by-gate sign-off for the current release cycle" actions={<><Btn small variant="outline">Request Fix</Btn><Btn variant="primary" small>Approve Release</Btn></>}>
+    <WorkspaceShell title="Release Readiness" subtitle="Gate-by-gate sign-off for the current release cycle" actions={<><Btn small variant="outline">Request Fix</Btn><Btn variant={gatePct === 100 ? 'primary' : 'outline'} small onClick={gatePct === 100 ? () => approveRelease(rel.id) : undefined}>{gatePct === 100 ? 'Approve Release' : `Release Blocked (${rel.gateChecks.filter(g => !g.passed).length} open)`}</Btn></>}>
       <div className="flex items-center gap-2 mb-5">
         {RELEASES.map(r => (
           <button key={r.id} onClick={() => setSelected(r.id)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${selected === r.id ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{r.name} · {r.targetDate}</button>
@@ -293,15 +294,20 @@ function ReleaseReadiness({ navigate }: { navigate: (s: Screen, id?: string) => 
             <SectionLabel>Release Gates</SectionLabel>
             <div className="mb-4"><div className="flex items-center justify-between text-[11px] mb-1.5"><span className="text-[#888]">Overall readiness</span><span className="font-medium text-[#333]">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} passed</span></div><ProgressBar pct={gatePct} /></div>
             {rel.gateChecks.map((gate, i) => (
-              <div key={i} className="flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0">
+              <div
+                key={i}
+                onClick={() => toggleGateCheck(rel.id, i)}
+                className="flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0 cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4"
+              >
                 <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#888]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
                 <div><p className={`text-[12px] ${gate.passed ? 'text-[#888] line-through' : 'text-[#333]'}`}>{gate.label}</p>{gate.note && !gate.passed && <p className="text-[10px] text-[#CC4444] mt-0.5">⚠ {gate.note}</p>}</div>
               </div>
             ))}
+            <p className="text-[10.5px] text-[#BBBBBB] mt-1">Click a gate to toggle it passed/open.</p>
             <div className="mt-4 flex flex-col gap-2">
               <Btn small variant="outline">Request Engineer Fix</Btn>
               <Btn small variant="outline">Flag to PM</Btn>
-              <Btn small variant={gatePct === 100 ? 'primary' : 'outline'}>{gatePct === 100 ? '✓ Approve Release' : `Approve Release (${rel.gateChecks.filter(g => !g.passed).length} open)`}</Btn>
+              <Btn small variant={gatePct === 100 ? 'primary' : 'outline'} onClick={gatePct === 100 ? () => approveRelease(rel.id) : undefined}>{gatePct === 100 ? '✓ Approve Release' : `Approve Release (${rel.gateChecks.filter(g => !g.passed).length} open)`}</Btn>
             </div>
           </CardShell>
 

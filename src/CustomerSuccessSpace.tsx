@@ -15,7 +15,7 @@ import {
   getAccount, getInitiative, getEpic, getStory, storyBreadcrumb, requestsForAccount, requestsForInitiative, initiativesForRequest,
   initiativePct,
   customerFacingInitiativeUpdate, customerFacingEpicUpdates, customerFacingReleaseStatus,
-  workflowTasksForSpace, pendingWorkflowCount,
+  workflowTasksForSpace, pendingWorkflowCount, acknowledgeWorkflowTask, completeWorkflowTask,
   type RequestStatus, type Initiative, type WorkflowTask,
 } from './data'
 import {
@@ -29,7 +29,6 @@ type Screen =
   | 'request-list' | 'request-detail' | 'create-request'
   | 'account-list' | 'account-detail'
   | 'initiative-list' | 'initiative-detail'
-  | 'reports'
 
 const NEEDS_ATTENTION: RequestStatus[] = ['New', 'Under Review']
 const OPEN_STAGES: RequestStatus[] = ['New', 'Under Review', 'Accepted', 'Linked to Initiative', 'In Progress']
@@ -58,8 +57,6 @@ function Sidebar({ nav, navigate }: { nav: Screen; navigate: (s: Screen) => void
         { id: 'request-list', label: 'Customer Requests', badge: needsAttention || undefined },
         { id: 'account-list', label: 'Accounts' },
         { id: 'initiative-list', label: 'Linked Initiatives' },
-        { id: 'reports', label: 'Reports' },
-        { id: 'create-request', label: '+ Log Request', action: true } as any,
       ]}
       nav={nav}
       navigate={navigate}
@@ -135,7 +132,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
               <span className="text-[12px] font-semibold text-[#333]">Workflow Orchestration</span>
             </div>
-            <WorkflowQueue tasks={wfQueue} onSelect={t => { const initId = wfTargetInitiativeId(t); if (initId) navigate('initiative-detail', initId) }} emptyLabel="No pending updates from Engineering or QA" />
+            <WorkflowQueue tasks={wfQueue} onSelect={t => { const initId = wfTargetInitiativeId(t); if (initId) navigate('initiative-detail', initId) }} emptyLabel="No pending updates from Engineering or QA" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
           </CardShell>
 
           <CardShell className="p-4">
@@ -152,6 +149,31 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
             ))}
           </CardShell>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mt-4">
+        <CardShell className="p-4">
+          <SectionLabel>Requests by Stage</SectionLabel>
+          {(['New', 'Under Review', 'Accepted', 'Linked to Initiative', 'In Progress', 'Released', 'Closed', 'Rejected'] as RequestStatus[]).map(stage => {
+            const count = CUSTOMER_REQUESTS.filter(r => r.stage === stage).length
+            return (
+              <div key={stage} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{stage}</span><span className="font-medium text-[#333]">{count}</span></div>
+            )
+          })}
+        </CardShell>
+        <CardShell className="p-4">
+          <SectionLabel>Requests by Account</SectionLabel>
+          {ACCOUNTS.map(acct => {
+            const count = requestsForAccount(acct.id).length
+            return (
+              <div key={acct.id} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{acct.name}</span><span className="font-medium text-[#333]">{count}</span></div>
+            )
+          })}
+          {(() => {
+            const noAccount = CUSTOMER_REQUESTS.filter(r => !r.accountId).length
+            return noAccount > 0 ? <div className="flex items-center justify-between text-[11px] py-1.5"><span className="text-[#AAAAAA] italic">No account</span><span className="font-medium text-[#333]">{noAccount}</span></div> : null
+          })()}
+        </CardShell>
       </div>
     </WorkspaceShell>
   )
@@ -398,40 +420,6 @@ function InitiativeDetailCS({ id, nav, navigate }: { id: string; nav: Nav; navig
   )
 }
 
-// ─── Reports ────────────────────────────────────────────────────────────────
-
-function Reports() {
-  const stages: RequestStatus[] = ['New', 'Under Review', 'Accepted', 'Linked to Initiative', 'In Progress', 'Released', 'Closed', 'Rejected']
-  return (
-    <WorkspaceShell title="Reports" subtitle="Customer request rollups">
-      <div className="grid grid-cols-2 gap-4">
-        <CardShell className="p-4">
-          <SectionLabel>Requests by Stage</SectionLabel>
-          {stages.map(stage => {
-            const count = CUSTOMER_REQUESTS.filter(r => r.stage === stage).length
-            return (
-              <div key={stage} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{stage}</span><span className="font-medium text-[#333]">{count}</span></div>
-            )
-          })}
-        </CardShell>
-        <CardShell className="p-4">
-          <SectionLabel>Requests by Account</SectionLabel>
-          {ACCOUNTS.map(acct => {
-            const count = requestsForAccount(acct.id).length
-            return (
-              <div key={acct.id} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{acct.name}</span><span className="font-medium text-[#333]">{count}</span></div>
-            )
-          })}
-          {(() => {
-            const noAccount = CUSTOMER_REQUESTS.filter(r => !r.accountId).length
-            return noAccount > 0 ? <div className="flex items-center justify-between text-[11px] py-1.5"><span className="text-[#AAAAAA] italic">No account</span><span className="font-medium text-[#333]">{noAccount}</span></div> : null
-          })()}
-        </CardShell>
-      </div>
-    </WorkspaceShell>
-  )
-}
-
 // ─── Space Root ────────────────────────────────────────────────────────────────
 
 export function CustomerSuccessSpace({ onContextChange }: { onContextChange: (ctx: { title: string; prompts: string[]; product?: string; entity?: string }) => void }) {
@@ -449,7 +437,6 @@ export function CustomerSuccessSpace({ onContextChange }: { onContextChange: (ct
       'account-detail': { title: 'Account Detail', prompts: ['Summarise this account’s open requests', 'Draft a check-in note'] },
       'initiative-list': { title: 'Linked Initiatives', prompts: ['Summarise progress across linked initiatives', 'Which are at risk of slipping?'] },
       'initiative-detail': { title: 'Initiative Progress', prompts: ['Draft a customer-facing update', 'When will this ship?'] },
-      'reports': { title: 'Reports', prompts: ['Summarise requests by stage', 'Which accounts need attention?'] },
     }
     onContextChange({ ...ctxMap[screen] })
   }
@@ -466,7 +453,6 @@ export function CustomerSuccessSpace({ onContextChange }: { onContextChange: (ct
         {nav.screen === 'account-detail' && <AccountDetail id={nav.id ?? ACCOUNTS[0].id} nav={shared} navigate={navigate} />}
         {nav.screen === 'initiative-list' && <InitiativeListCS navigate={navigate} />}
         {nav.screen === 'initiative-detail' && <InitiativeDetailCS id={nav.id ?? INITIATIVES[0].id} nav={shared} navigate={navigate} />}
-        {nav.screen === 'reports' && <Reports />}
       </main>
     </div>
   )
