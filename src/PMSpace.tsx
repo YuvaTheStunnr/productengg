@@ -7,8 +7,8 @@ import {
   hotfixesForProduct, acknowledgeWorkflowTask, completeWorkflowTask,
 } from './data'
 import {
-  HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag,
-  ProductSwitcher, WorkflowQueue, EmptyState, Modal,
+  HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, ProgressLabel, KPITile, SidebarShell, WorkspaceShell, Btn, Tag,
+  ProductSwitcher, WorkflowQueue, EmptyState, Modal, plural,
 } from './ui'
 import {
   IdeaDetail, CreateIdea, InitiativeDetail, CreateInitiative,
@@ -68,7 +68,7 @@ function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate
       ]}
       nav={nav}
       navigate={navigate}
-      spaceColor="bg-[#555]"
+      spaceColor="bg-[#2563EB]"
       userName="Alex Chen"
       userRole="Product Lead"
       projectName="PM Space"
@@ -100,7 +100,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
         <KPITile label="Workflow Tasks" value={String(pendingWorkflowCountLocal())} alert={pendingWorkflowCountLocal() > 0} />
       </div>
 
-      <div className="grid grid-cols-[1fr_288px] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_288px] gap-4">
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
@@ -114,9 +114,9 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
                     <span className="text-[12.5px] font-medium text-[#1A1A1A]">{init.title}</span>
                     <StatusPair workflow={init.workflowState} health={initiativeHealth(init)} />
                   </div>
-                  <span className="text-[11px] text-[#888]">{initiativePct(init)}%</span>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[11px] text-[#888]" />
                 </div>
-                <ProgressBar pct={initiativePct(init)} />
+                <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
                 <div className="flex gap-4 mt-1.5 text-[10px] text-[#BBBBBB]">
                   <span>PM: {init.pm}</span><span>Eng: {init.engLead}</span><span>Target: {init.targetDate}</span>
                 </div>
@@ -208,7 +208,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
               'Assign Feature Tour a 2nd engineer to recover schedule',
             ].map((s, i) => (
               <div key={i} className="flex items-start gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
-                <span className="w-4 h-4 bg-[#1A1A1A] text-white text-[8px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="w-4 h-4 bg-[#4F46E5] text-white text-[8px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                 <p className="text-[11.5px] text-[#444] leading-snug">{s}</p>
               </div>
             ))}
@@ -221,8 +221,8 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
           <SectionLabel>Initiative Progress</SectionLabel>
           {initiatives.map(init => (
             <div key={init.id} className="py-1.5">
-              <div className="flex items-center justify-between text-[11px] mb-1"><span className="text-[#555] truncate mr-2">{init.title}</span><span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span></div>
-              <ProgressBar pct={initiativePct(init)} thin />
+              <div className="flex items-center justify-between text-[11px] mb-1"><span className="text-[#555] truncate mr-2">{init.title}</span><ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[#888] flex-shrink-0" /></div>
+              <ProgressBar pct={initiativePct(init)} thin health={initiativeHealth(init)} />
             </div>
           ))}
           {initiatives.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-1">No initiatives for this product yet.</p>}
@@ -252,10 +252,21 @@ function pendingWorkflowCountLocal() { return pendingWorkflowCount('pm') }
 // ─── Ideas ──────────────────────────────────────────────────────────────────
 
 function IdeaList({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
+  const [filter, setFilter] = useState<'all' | 'Idea' | 'Converted' | 'Rejected'>('all')
+  const filtered = filter === 'all' ? IDEAS : IDEAS.filter(i => i.status === filter)
   return (
-    <WorkspaceShell title="Ideas" subtitle="Ideas Leadership or PM has captured — convert into an initiative when ready.">
+    <WorkspaceShell title="Ideas" subtitle="Ideas Leadership or PM has captured — convert into an initiative when ready."
+      actions={<Btn variant="primary" onClick={() => navigate('create-idea')}>+ New Idea</Btn>}>
+      <div className="flex items-center gap-2 mb-4">
+        {(['all', 'Idea', 'Converted', 'Rejected'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>
+            {f === 'all' ? 'All' : f}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-col gap-3">
-        {IDEAS.map(idea => (
+        {filtered.map(idea => (
           <CardShell key={idea.id} onClick={() => navigate('idea-detail', idea.id)}>
             <div className="px-5 py-4 flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
@@ -266,6 +277,7 @@ function IdeaList({ navigate }: { navigate: (s: Screen, id?: string) => void }) 
             </div>
           </CardShell>
         ))}
+        {filtered.length === 0 && <EmptyState title="No ideas match this filter" />}
       </div>
     </WorkspaceShell>
   )
@@ -292,13 +304,13 @@ function InitiativeList({ navigate, product }: { navigate: (s: Screen, id?: stri
                     <div className="flex items-center gap-4 text-[11px] text-[#AAAAAA]"><span>PM: <span className="text-[#555]">{init.pm}</span></span><span>Eng: <span className="text-[#555]">{init.engLead}</span></span><span>QA: <span className="text-[#555]">{init.qaLead}</span></span></div>
                   </div>
                   <div className="flex-shrink-0 text-right w-36">
-                    <p className="text-[20px] font-bold text-[#1A1A1A]">{initiativePct(init)}%</p>
-                    <ProgressBar pct={initiativePct(init)} />
+                    <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[20px] font-bold text-[#1A1A1A] block" />
+                    <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
                     <p className="text-[10px] text-[#BBBBBB] mt-1">{init.targetDate}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 pt-3 border-t border-[#F5F5F5] text-[11px] text-[#888]">
-                  <span>{epics.length} epics</span><span>{allStories.length} stories</span><span>{allStories.filter(s => storyHealth(s) === 'Blocked').length} blocked</span><span>{init.risks.filter(r => r.severity === 'High').length} high risks</span>
+                  <span>{epics.length} {plural(epics.length, 'epic')}</span><span>{allStories.length} {plural(allStories.length, 'story', 'stories')}</span><span>{allStories.filter(s => storyHealth(s) === 'Blocked').length} blocked</span><span>{init.risks.filter(r => r.severity === 'High').length} high {plural(init.risks.filter(r => r.severity === 'High').length, 'risk')}</span>
                 </div>
               </div>
             </CardShell>
@@ -327,9 +339,9 @@ function EpicList({ navigate, product }: { navigate: (s: Screen, id?: string) =>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3 mb-1.5"><h3 className="text-[13.5px] font-semibold text-[#1A1A1A]">{epic.title}</h3><StatusPair workflow={epic.workflowState} health={epicHealth(epic)} /></div>
                   <p className="text-[12px] text-[#666] mb-2">{epic.description}</p>
-                  <div className="flex items-center gap-3 text-[11px] text-[#AAAAAA]"><Tag label={init?.title ?? ''} variant="muted" /><span>{stories.length} stories</span><span>{epic.assignee}</span></div>
+                  <div className="flex items-center gap-3 text-[11px] text-[#AAAAAA]"><Tag label={init?.title ?? ''} variant="muted" /><span>{stories.length} {plural(stories.length, 'story', 'stories')}</span><span>{epic.assignee}</span></div>
                 </div>
-                <div className="flex-shrink-0 text-right w-28"><p className="text-[18px] font-bold text-[#1A1A1A]">{epicPct(epic)}%</p><ProgressBar pct={epicPct(epic)} /></div>
+                <div className="flex-shrink-0 text-right w-28"><ProgressLabel pct={epicPct(epic)} health={epicHealth(epic)} className="text-[18px] font-bold text-[#1A1A1A] block" /><ProgressBar pct={epicPct(epic)} health={epicHealth(epic)} /></div>
               </div>
             </CardShell>
           )
@@ -358,7 +370,7 @@ function BacklogListView({ navigate, product }: { navigate: (s: Screen, id?: str
       {groups.map(group => (
         <CardShell key={group.label}>
           <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
-            <div className="flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">{group.label}</span><span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{group.stories.length}</span></div>
+            <div className="flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">{group.label}</span><span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{group.stories.length}</span></div>
             <span className="text-[11px] text-[#888]">{group.stories.reduce((a, s) => a + s.points, 0)} pts</span>
           </div>
           {group.stories.map(story => {
@@ -398,7 +410,7 @@ function ReleaseList({ navigate }: { navigate: (s: Screen, id?: string) => void 
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-[12px] font-medium text-[#333]">{rel.targetDate}</p>
-                <p className="text-[10px] text-[#BBBBBB] mt-1">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} gates · {releasePct(rel)}%</p>
+                <p className="text-[10px] text-[#BBBBBB] mt-1">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} gates · <ProgressLabel pct={releasePct(rel)} health={releaseHealth(rel)} /></p>
               </div>
             </div>
           </CardShell>
@@ -424,7 +436,7 @@ function PlanningBoardView({ navigate, product }: { navigate: (s: Screen, id?: s
         <div key={col.id} className="flex-shrink-0 w-72 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="text-[12px] font-semibold text-[#555]">{col.label}</span>
-            <div className="flex items-center gap-1.5"><span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{col.stories.length}</span><span className="text-[10px] text-[#BBBBBB]">{col.stories.reduce((a, s) => a + s.points, 0)} pts</span></div>
+            <div className="flex items-center gap-1.5"><span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{col.stories.length}</span><span className="text-[10px] text-[#BBBBBB]">{col.stories.reduce((a, s) => a + s.points, 0)} pts</span></div>
           </div>
           <div className="flex flex-col gap-2">
             {col.stories.map(story => {
@@ -455,8 +467,8 @@ function Backlog({ navigate, product }: { navigate: (s: Screen, id?: string) => 
       actions={
         <>
           <div className="flex items-center border border-[#E0E0E0] rounded-md overflow-hidden mr-1">
-            <button onClick={() => setView('list')} className={`text-[11px] px-2.5 py-1 transition-colors ${view === 'list' ? 'bg-[#1A1A1A] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>List</button>
-            <button onClick={() => setView('board')} className={`text-[11px] px-2.5 py-1 transition-colors ${view === 'board' ? 'bg-[#1A1A1A] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Board</button>
+            <button onClick={() => setView('list')} className={`text-[11px] px-2.5 py-1 transition-colors ${view === 'list' ? 'bg-[#4F46E5] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>List</button>
+            <button onClick={() => setView('board')} className={`text-[11px] px-2.5 py-1 transition-colors ${view === 'board' ? 'bg-[#4F46E5] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Board</button>
           </div>
           <Btn variant="primary" small onClick={() => navigate('create-story')}>+ Story</Btn>
         </>
@@ -475,6 +487,18 @@ function Backlog({ navigate, product }: { navigate: (s: Screen, id?: string) => 
 // all" modal off the Dashboard's Workflow Orchestration card, since it's a
 // drill-in on the same data rather than a distinct place of work.
 
+// CSS capitalize only uppercases the first letter, which turns 'qa' into
+// "Qa" and would turn 'customer-success' into "Customer-success" — neither
+// is a real space name, so each one needs to be spelled out instead of
+// title-cased from its id.
+const SPACE_LABELS: Record<string, string> = {
+  leadership: 'Leadership',
+  pm: 'PM',
+  engineering: 'Engineering',
+  qa: 'QA',
+  'customer-success': 'Customer Success',
+}
+
 function OrchestrationBoard({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending')
   const filtered = filter === 'all' ? WORKFLOW_TASKS : filter === 'pending' ? WORKFLOW_TASKS.filter(t => t.status !== 'Done') : WORKFLOW_TASKS.filter(t => t.status === 'Done')
@@ -484,7 +508,7 @@ function OrchestrationBoard({ navigate }: { navigate: (s: Screen, id?: string) =
     <div>
       <div className="flex items-center gap-2 mb-4">
         {(['pending', 'all', 'done'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors capitalize ${filter === f ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f}</button>
+          <button key={f} onClick={() => setFilter(f)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors capitalize ${filter === f ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f}</button>
         ))}
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -493,8 +517,8 @@ function OrchestrationBoard({ navigate }: { navigate: (s: Screen, id?: string) =
           return (
             <CardShell key={space}>
               <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2">
-                <span className="text-[12px] font-semibold text-[#333] capitalize">{space}</span>
-                <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
+                <span className="text-[12px] font-semibold text-[#333]">{SPACE_LABELS[space]}</span>
+                <span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
               </div>
               <WorkflowQueue tasks={tasks} onSelect={t => navigate(wfDetailScreen(t.sourceType), t.sourceId)} emptyLabel="Nothing here" onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
             </CardShell>
@@ -545,9 +569,9 @@ export function PMSpace({ onContextChange }: { onContextChange: (ctx: { title: s
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
+    <div className="flex flex-1 h-full min-w-0 overflow-hidden">
       <Sidebar nav={nav.screen} navigate={navigate} product={product} setProduct={setProduct} />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 min-w-0 overflow-hidden">
         {nav.screen === 'dashboard' && <Dashboard navigate={navigate} product={product} />}
         {nav.screen === 'idea-list' && <IdeaList navigate={navigate} />}
         {nav.screen === 'idea-detail' && <IdeaDetail id={nav.id ?? IDEAS[0].id} nav={shared} role="pm" />}

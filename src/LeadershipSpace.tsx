@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   INITIATIVES, IDEAS, RELEASES, epicsForInitiative, initiativeHealth, initiativePct, releaseHealth,
 } from './data'
-import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, Breadcrumb, SidebarShell, WorkspaceShell, Btn, Tag } from './ui'
+import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, ProgressLabel, KPITile, Breadcrumb, SidebarShell, WorkspaceShell, Btn, Tag } from './ui'
 import {
   IdeaDetail, CreateIdea, InitiativeDetail, CreateInitiative, ReleaseDetail, type Nav,
 } from './entities'
@@ -28,7 +28,7 @@ function Sidebar({ nav, navigate }: { nav: Screen; navigate: (s: Screen) => void
       ]}
       nav={nav}
       navigate={navigate}
-      spaceColor="bg-[#444]"
+      spaceColor="bg-[#4F46E5]"
       userName="Jamie Okonkwo"
       userRole="VP Product"
       projectName="Leadership Space"
@@ -55,7 +55,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
         <KPITile label="Delivery Confidence" value={`${avgConfidence}%`} sub="Based on current progress" />
       </div>
 
-      <div className="grid grid-cols-[1fr_296px] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_296px] gap-4">
         <div className="flex flex-col gap-4">
           {/* Initiative Health */}
           <CardShell>
@@ -76,8 +76,8 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <div className="w-20"><ProgressBar pct={initiativePct(init)} /></div>
-                  <span className="text-[11px] text-[#888] w-8 text-right">{initiativePct(init)}%</span>
+                  <div className="w-20"><ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} /></div>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[11px] text-[#888] w-8 text-right block" />
                   <StatusPair workflow={init.workflowState} health={initiativeHealth(init)} />
                   <span className="text-[11px] text-[#BBBBBB] w-24 text-right">{init.targetDate}</span>
                 </div>
@@ -116,8 +116,10 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
                     <p className="text-[12px] font-semibold text-[#333]">{init.title}</p>
                     <HealthBadge health={initiativeHealth(init)} />
                   </div>
-                  <ProgressBar pct={initiativePct(init)} />
-                  <p className="text-[10px] text-[#CCCCCC] mt-1">Target: {init.targetDate} · {initiativePct(init)}% complete</p>
+                  <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
+                  <p className="text-[10px] text-[#CCCCCC] mt-1">
+                    Target: {init.targetDate} · {initiativeHealth(init) === 'Blocked' ? <span className="text-[#CC4444] font-medium">Blocked</span> : `${initiativePct(init)}% complete`}
+                  </p>
                   {init.risks.filter(r => r.severity === 'High').map((r, i) => (
                     <p key={i} className="text-[10.5px] text-[#CC4444] mt-1.5">⚠ {r.text}</p>
                   ))}
@@ -142,7 +144,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
           <CardShell className="p-4">
             <div className="flex items-center justify-between mb-2">
               <SectionLabel>Ideas Awaiting Review</SectionLabel>
-              <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{openIdeas.length}</span>
+              <span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{openIdeas.length}</span>
             </div>
             {openIdeas.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No open ideas.</p>}
             {openIdeas.map(idea => (
@@ -175,9 +177,9 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
             <div key={init.id} className="py-1.5">
               <div className="flex items-center justify-between text-[11px] mb-1">
                 <span className="text-[#555] truncate mr-2">{init.title}</span>
-                <span className="text-[#888] flex-shrink-0">{initiativePct(init)}%</span>
+                <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[#888] flex-shrink-0" />
               </div>
-              <ProgressBar pct={initiativePct(init)} thin />
+              <ProgressBar pct={initiativePct(init)} thin health={initiativeHealth(init)} />
             </div>
           ))}
         </CardShell>
@@ -198,7 +200,7 @@ function IdeaList({ navigate }: { navigate: (s: Screen, id?: string) => void }) 
       <div className="flex items-center gap-2 mb-4">
         {(['all', 'Idea', 'Converted', 'Rejected'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>
+            className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>
             {f === 'all' ? 'All' : f}
           </button>
         ))}
@@ -244,7 +246,7 @@ function InitiativeList({ navigate }: { navigate: (s: Screen, id?: string) => vo
       <div className="flex items-center gap-2 mb-4">
         {['all', 'In Progress', 'Planning', 'attention', 'Draft'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>
+            className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>
             {f === 'attention' ? 'Needs Attention' : f === 'all' ? 'All' : f}
           </button>
         ))}
@@ -272,10 +274,10 @@ function InitiativeList({ navigate }: { navigate: (s: Screen, id?: string) => vo
               </div>
               <div className="flex flex-col items-end gap-2 flex-shrink-0 w-40">
                 <div className="text-right mb-1">
-                  <span className="text-[18px] font-bold text-[#1A1A1A]">{initiativePct(init)}%</span>
-                  <p className="text-[10px] text-[#BBBBBB]">complete</p>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[18px] font-bold text-[#1A1A1A]" />
+                  {initiativeHealth(init) !== 'Blocked' && <p className="text-[10px] text-[#BBBBBB]">complete</p>}
                 </div>
-                <ProgressBar pct={initiativePct(init)} />
+                <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
                 {init.risks.filter(r => r.severity === 'High').length > 0 && (
                   <p className="text-[10px] text-[#CC4444]">⚠ {init.risks.filter(r => r.severity === 'High').length} high risk</p>
                 )}
@@ -313,9 +315,9 @@ export function LeadershipSpace({ onContextChange }: { onContextChange: (ctx: { 
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
+    <div className="flex flex-1 h-full min-w-0 overflow-hidden">
       <Sidebar nav={nav.screen} navigate={navigate} />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 min-w-0 overflow-hidden">
         {nav.screen === 'dashboard' && <Dashboard navigate={navigate} />}
         {nav.screen === 'idea-list' && <IdeaList navigate={navigate} />}
         {nav.screen === 'idea-detail' && <IdeaDetail id={nav.id ?? IDEAS[0].id} nav={shared} role="leadership" />}

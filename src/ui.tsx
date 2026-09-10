@@ -6,14 +6,19 @@ import type { WorkflowState, Health, Priority, Product, WorkflowTask, Attachment
 const wfStyles: Record<WorkflowState, string> = {
   'Draft':       'border border-dashed border-[#CCCCCC] text-[#AAAAAA]',
   'Planning':    'border border-[#CCCCCC] text-[#777]',
-  'In Progress': 'bg-[#1A1A1A] text-white border border-[#1A1A1A]',
+  'In Progress': 'bg-[#4F46E5] text-white border border-[#4F46E5]',
   'Testing':     'border-2 border-[#888] text-[#555]',
   'Released':    'bg-[#444] text-white border border-[#444]',
   'Paused':      'border border-[#DDDDDD] text-[#BBBBBB] bg-[#F9F9F9]',
 }
 
+// Health is the app's core status vocabulary, so its colors carry real
+// meaning rather than a uniform gray: green reads "healthy" (soft = still
+// moving, solid = done), amber reads "needs a look," red reads "stopped."
+// Overdue and Completed used to be nearly the same dark pill — now green vs.
+// amber makes "done" and "late" tell apart at a glance, not just by icon.
 const healthIcons: Record<Health, string> = {
-  'On Track':   '✓',
+  'On Track':   '●',
   'Blocked':    '!',
   'Overdue':    '⏰',
   'Not Started':'○',
@@ -21,11 +26,11 @@ const healthIcons: Record<Health, string> = {
 }
 
 const healthStyles: Record<Health, string> = {
-  'On Track':   'bg-[#F0F0F0] text-[#555] border border-[#DCDCDC]',
+  'On Track':   'bg-[#EAF5EC] text-[#2F7A42] border border-[#CFE8D3]',
   'Blocked':    'bg-[#FDF0F0] text-[#CC4444] border border-[#E8CCCC]',
-  'Overdue':    'bg-[#1A1A1A] text-white border border-[#1A1A1A]',
-  'Not Started':'bg-[#FAFAFA] text-[#BBBBBB] border border-dashed border-[#DDDDDD]',
-  'Completed':  'bg-[#444] text-white border border-[#444]',
+  'Overdue':    'bg-[#FDF6E8] text-[#9A6B00] border border-[#EEDBAF]',
+  'Not Started':'bg-[#FAFAFA] text-[#999999] border border-dashed border-[#DDDDDD]',
+  'Completed':  'bg-[#2F7A42] text-white border border-[#2F7A42]',
 }
 
 export function WorkflowBadge({ state }: { state: WorkflowState }) {
@@ -45,11 +50,15 @@ export function HealthBadge({ health }: { health: Health }) {
   )
 }
 
+// Escalating, not four unrelated colors: Low (neutral) → Medium (amber, same
+// "needs a look" amber as Overdue) → High (red, same alarm red as Blocked) →
+// Critical (solid red fill — reads as more urgent than an outlined High,
+// where a black/neutral Critical used to read as calmer than a red High).
 const severityStyles: Record<Priority, string> = {
-  Critical: 'bg-[#1A1A1A] text-white border border-[#1A1A1A]',
+  Critical: 'bg-[#8A1F1A] text-white border border-[#8A1F1A]',
   High:     'bg-[#FDF0F0] text-[#CC4444] border border-[#E8CCCC]',
-  Medium:   'bg-[#EBEBEB] text-[#555] border border-[#D8D8D8]',
-  Low:      'bg-[#FAFAFA] text-[#BBBBBB] border border-[#E4E4E4]',
+  Medium:   'bg-[#FDF6E8] text-[#9A6B00] border border-[#EEDBAF]',
+  Low:      'bg-[#FAFAFA] text-[#999999] border border-[#E4E4E4]',
 }
 
 export function SeverityBadge({ severity }: { severity: Priority }) {
@@ -65,7 +74,7 @@ const requestStageStyles: Record<RequestStatus, string> = {
   'Under Review':         'border border-[#CCCCCC] text-[#777]',
   'Accepted':             'bg-[#F0F0F0] text-[#555] border border-[#DCDCDC]',
   'Linked to Initiative': 'bg-[#EBEBEB] text-[#555] border border-[#D8D8D8]',
-  'In Progress':          'bg-[#1A1A1A] text-white border border-[#1A1A1A]',
+  'In Progress':          'bg-[#4F46E5] text-white border border-[#4F46E5]',
   'Released':             'bg-[#444] text-white border border-[#444]',
   'Closed':                'bg-[#FAFAFA] text-[#BBBBBB] border border-[#E4E4E4]',
   'Rejected':             'bg-[#FDF0F0] text-[#CC4444] border border-[#E8CCCC]',
@@ -78,7 +87,7 @@ export function RequestStageBadge({ stage }: { stage: RequestStatus }) {
 export function Tag({ label, variant = 'default' }: { label: string; variant?: 'default' | 'dark' | 'outline' | 'muted' | 'code' }) {
   const s: Record<string, string> = {
     default: 'bg-[#EBEBEB] text-[#444] border border-[#D8D8D8]',
-    dark:    'bg-[#1A1A1A] text-white border border-[#1A1A1A]',
+    dark:    'bg-[#4F46E5] text-white border border-[#4F46E5]',
     outline: 'bg-white text-[#555] border border-[#C8C8C8]',
     muted:   'bg-[#F5F5F5] text-[#888] border border-[#E4E4E4]',
     code:    'bg-[#F5F5F5] text-[#444] border border-[#E4E4E4] font-mono',
@@ -128,16 +137,45 @@ export function Modal({ title, subtitle, onClose, children, wide }: { title: str
   )
 }
 
+// "1 epics" reads as a typo, not a wireframe — this is the one place count
+// copy gets pluralized, so every "{n} {noun}" label goes through it instead
+// of a bare template string.
+export function plural(n: number, word: string, pluralForm?: string): string {
+  return n === 1 ? word : (pluralForm ?? `${word}s`)
+}
+
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[10px] font-semibold uppercase tracking-widest text-[#AAAAAA] mb-2">{children}</p>
 }
 
-export function ProgressBar({ pct, thin }: { pct: number; thin?: boolean }) {
+// `health` is optional and only changes the visual when it's 'Blocked': a
+// percentage implies steady forward motion, which is misleading for
+// something stalled, so a blocked bar reads as a static red hazard stripe
+// instead of a fill amount. Pair with ProgressLabel below, which swaps the
+// "NN%" text for "Blocked" the same way, so the number and the bar never
+// disagree about whether something is actually progressing.
+export function ProgressBar({ pct, thin, health }: { pct: number; thin?: boolean; health?: Health }) {
+  const blocked = health === 'Blocked'
   return (
-    <div className={`bg-[#EBEBEB] rounded-full overflow-hidden w-full ${thin ? 'h-1' : 'h-1.5'}`}>
-      <div className="h-full bg-[#888] rounded-full transition-all" style={{ width: `${pct}%` }} />
+    <div className={`bg-[#EBEBEB] rounded-full overflow-hidden w-full relative ${thin ? 'h-1' : 'h-1.5'}`}>
+      {blocked ? (
+        <div
+          className="absolute inset-0"
+          style={{ backgroundImage: 'repeating-linear-gradient(135deg, #E8B8B3 0, #E8B8B3 3px, transparent 3px, transparent 7px)' }}
+        />
+      ) : (
+        <div className="h-full bg-[#4F46E5] rounded-full transition-all" style={{ width: `${pct}%` }} />
+      )}
     </div>
   )
+}
+
+export function ProgressLabel({ pct, health, className }: { pct: number; health?: Health; className?: string }) {
+  // Blocked color is set inline so it always wins over any text-color utility the caller passes in
+  // className (e.g. a muted "text-[#888]" used for the normal percentage) — class-vs-class precedence
+  // in Tailwind isn't determined by source order, so a plain class here could lose that fight.
+  if (health === 'Blocked') return <span className={`font-medium ${className ?? ''}`} style={{ color: '#CC4444' }}>Blocked</span>
+  return <span className={className}>{pct}%</span>
 }
 
 export function Divider({ className = '' }: { className?: string }) {
@@ -208,14 +246,55 @@ export function TabBar<T extends string>({ tabs, active, onSelect }: { tabs: { i
           key={t.id}
           onClick={() => onSelect(t.id)}
           className={`px-4 py-2.5 text-[12.5px] border-b-2 transition-colors whitespace-nowrap
-            ${active === t.id ? 'border-[#1A1A1A] text-[#1A1A1A] font-semibold' : 'border-transparent text-[#888] hover:text-[#555]'}`}
+            ${active === t.id ? 'border-[#4F46E5] text-[#4F46E5] font-semibold' : 'border-transparent text-[#888] hover:text-[#555]'}`}
         >
           {t.label}
           {t.count !== undefined && (
-            <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${active === t.id ? 'bg-[#1A1A1A] text-white' : 'bg-[#EBEBEB] text-[#666]'}`}>{t.count}</span>
+            <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${active === t.id ? 'bg-[#4F46E5] text-white' : 'bg-[#EBEBEB] text-[#666]'}`}>{t.count}</span>
           )}
         </button>
       ))}
+    </div>
+  )
+}
+
+// ─── Horizontal scroll affordance ───────────────────────────────────────────
+// Wraps any horizontally-scrolling row (a kanban board's columns, most often)
+// with edge fades that only appear on the side there's actually more to see.
+// Without this, a board that overflows just looks cut off — nothing on
+// screen says "scroll for more," so the last column reads as broken rather
+// than as one swipe away. `fadeColor` should match the surface behind the
+// scroller (every WorkspaceShell body is #F7F7F7) so the fade blends in.
+export function HScroll({ children, className, fadeColor = '#F7F7F7', fullHeight }: { children: React.ReactNode; className?: string; fadeColor?: string; fullHeight?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [canLeft, setCanLeft] = useState(false)
+  const [canRight, setCanRight] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      setCanLeft(el.scrollLeft > 4)
+      setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4)
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', update); ro.disconnect() }
+  }, [])
+
+  return (
+    <div className={`relative min-w-0 ${fullHeight ? 'h-full' : ''}`}>
+      <div ref={ref} className={`overflow-x-auto ${fullHeight ? 'h-full' : ''} ${className ?? ''}`}>{children}</div>
+      {canLeft && (
+        <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-8" style={{ background: `linear-gradient(to right, ${fadeColor}, transparent)` }} />
+      )}
+      {canRight && (
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-12 flex items-center justify-end pr-1" style={{ background: `linear-gradient(to left, ${fadeColor}, transparent)` }}>
+          <span className="text-[#999999] text-[13px]">→</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -232,12 +311,12 @@ export function KanbanBoard<T>({ columns, cardKey, renderCard }: {
   renderCard: (item: T) => React.ReactNode
 }) {
   return (
-    <div className="flex overflow-x-auto gap-4 pb-2">
+    <HScroll className="flex gap-4 pb-2">
       {columns.map(col => (
         <div key={col.id} className="flex-shrink-0 w-64 flex flex-col gap-3">
           <div className="flex items-center justify-between px-0.5">
             <span className="text-[12px] font-semibold text-[#555]">{col.label}</span>
-            <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{col.items.length}</span>
+            <span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{col.items.length}</span>
           </div>
           <div className="flex flex-col gap-2">
             {col.items.map(item => <div key={cardKey(item)}>{renderCard(item)}</div>)}
@@ -247,7 +326,7 @@ export function KanbanBoard<T>({ columns, cardKey, renderCard }: {
           </div>
         </div>
       ))}
-    </div>
+    </HScroll>
   )
 }
 
@@ -273,23 +352,27 @@ export function monthPosition(dateStr?: string): number | null {
   return Math.max(0, Math.min(5.95, pos))
 }
 
+// Kept in sync with healthStyles above — a Gantt bar for an Overdue or
+// Completed initiative should read the same amber/green as its HealthBadge
+// anywhere else in the app, not a leftover black/gray from before that
+// system existed.
 export function ganttBarClass(health: Health): string {
   switch (health) {
     case 'Blocked': return 'bg-[#F5E8E8] border border-[#E8CCCC] text-[#CC4444]'
-    case 'Overdue': return 'bg-[#1A1A1A] border border-[#1A1A1A] text-white'
+    case 'Overdue': return 'bg-[#FDF6E8] border border-[#EEDBAF] text-[#9A6B00]'
     case 'Not Started': return 'bg-[#F5F5F5] border border-dashed border-[#CCCCCC] text-[#AAAAAA]'
-    case 'Completed': return 'bg-[#444] border border-[#444] text-white'
-    default: return 'bg-[#EBEBEB] border border-[#D8D8D8] text-[#555]'
+    case 'Completed': return 'bg-[#2F7A42] border border-[#2F7A42] text-white'
+    default: return 'bg-[#EAF5EC] border border-[#CFE8D3] text-[#2F7A42]'
   }
 }
 
 export function ganttDotClass(health: Health): string {
   switch (health) {
     case 'Blocked': return 'bg-[#CC4444]'
-    case 'Overdue': return 'bg-[#1A1A1A]'
+    case 'Overdue': return 'bg-[#C98A00]'
     case 'Not Started': return 'bg-[#CCCCCC]'
-    case 'Completed': return 'bg-[#444]'
-    default: return 'bg-[#888]'
+    case 'Completed': return 'bg-[#2F7A42]'
+    default: return 'bg-[#4CAF6F]'
   }
 }
 
@@ -312,8 +395,8 @@ export function GanttTimeline({ rows, milestones }: {
           <div className="relative h-8">
             {milestones.map(m => (
               <div key={m.label} className="absolute flex flex-col items-center" style={{ left: `${(m.month / 6) * 100}%` }}>
-                <div className="w-px h-3 bg-[#888] mt-1" />
-                <div className="w-2 h-2 bg-[#888] rotate-45 -mt-1" />
+                <div className="w-px h-3 bg-[#4F46E5] mt-1" />
+                <div className="w-2 h-2 bg-[#4F46E5] rotate-45 -mt-1" />
                 <span className="text-[9px] text-[#555] whitespace-nowrap mt-1 -translate-x-1/2">{m.label}</span>
               </div>
             ))}
@@ -367,7 +450,13 @@ export function WorkspaceShell({ title, subtitle, actions, children, noPad }: {
   noPad?: boolean
 }) {
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#F7F7F7]">
+    // min-w-0 matters here: without it, a flex child's default min-width is
+    // its content's natural width, so a wide dashboard grid refuses to
+    // shrink to the space actually left by the sidebar + AI panel and
+    // overflows sideways instead — which reads as content clipped behind
+    // the AI panel, not as a sizing bug. See also the grid-cols
+    // minmax(0,1fr) fix on the two-column dashboard/detail layouts.
+    <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#F7F7F7]">
       {title && (
         <div className="bg-white border-b border-[#E4E4E4] px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div>
@@ -377,7 +466,7 @@ export function WorkspaceShell({ title, subtitle, actions, children, noPad }: {
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={`flex-1 overflow-y-auto ${noPad ? '' : 'px-6 py-5'}`}>{children}</div>
+      <div className={`flex-1 min-w-0 overflow-y-auto ${noPad ? '' : 'px-6 py-5'}`}>{children}</div>
     </div>
   )
 }
@@ -416,12 +505,12 @@ export function SidebarShell<T extends string>({
             <button
               onClick={() => !item.children && navigate(item.id)}
               className={`w-full text-left px-3 py-1.5 rounded text-[12px] flex items-center justify-between mb-0.5 transition-colors
-                ${!item.children && nav === item.id ? 'bg-[#1A1A1A] text-white font-medium' : item.action ? 'text-[#888] hover:text-[#555] hover:bg-[#F0F0F0]' : 'text-[#555] hover:bg-[#F0F0F0]'}`}
+                ${!item.children && nav === item.id ? 'bg-[#4F46E5] text-white font-medium' : item.action ? 'text-[#888] hover:text-[#555] hover:bg-[#F0F0F0]' : 'text-[#555] hover:bg-[#F0F0F0]'}`}
             >
               <span className={item.action ? 'flex items-center gap-1' : ''}>{item.action && <span className="text-[11px]">+</span>}{item.label}</span>
               {item.badge !== undefined && (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0
-                  ${!item.children && nav === item.id ? 'bg-white/20 text-white' : 'bg-[#EBEBEB] text-[#777]'}`}>
+                  ${!item.children && nav === item.id ? 'bg-white/20 text-white' : 'bg-[#EBEBEB] text-[#555]'}`}>
                   {item.badge}
                 </span>
               )}
@@ -434,7 +523,7 @@ export function SidebarShell<T extends string>({
                     key={child.id + child.label}
                     onClick={() => navigate(child.id)}
                     className={`text-left px-2 py-1.5 rounded text-[11.5px] transition-colors
-                      ${nav === child.id ? 'bg-[#EBEBEB] text-[#1A1A1A] font-semibold' : 'text-[#777] hover:bg-[#F0F0F0]'}`}
+                      ${nav === child.id ? 'bg-[#EEF2FF] text-[#3730A3] font-semibold' : 'text-[#777] hover:bg-[#F0F0F0]'}`}
                   >
                     {child.label}
                   </button>
@@ -485,7 +574,7 @@ export function StatusPair({ workflow, health }: { workflow: WorkflowState; heal
 
 export function Btn({ children, variant = 'outline', onClick, small }: { children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost'; onClick?: () => void; small?: boolean }) {
   const base = `rounded font-medium transition-colors cursor-pointer ${small ? 'text-[11px] px-3 py-1' : 'text-[12px] px-4 py-1.5'}`
-  const v = { primary: 'bg-[#1A1A1A] text-white hover:bg-[#333]', outline: 'border border-[#E0E0E0] text-[#555] hover:bg-[#F5F5F5]', ghost: 'text-[#888] hover:text-[#333] hover:bg-[#F5F5F5]' }
+  const v = { primary: 'bg-[#4F46E5] text-white hover:bg-[#4338CA]', outline: 'border border-[#E0E0E0] text-[#555] hover:bg-[#F5F5F5]', ghost: 'text-[#888] hover:text-[#333] hover:bg-[#F5F5F5]' }
   return <button className={`${base} ${v[variant]}`} onClick={onClick}>{children}</button>
 }
 
@@ -540,13 +629,13 @@ export function ProductSwitcher({ products, selected, onChange }: { products: Pr
             <button
               key={p.id}
               onClick={() => { onChange(p.id); setOpen(false) }}
-              className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors ${selected === p.id ? 'bg-[#F5F5F5]' : 'hover:bg-[#F9F9F9]'}`}
+              className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors ${selected === p.id ? 'bg-[#EEF2FF]' : 'hover:bg-[#F9F9F9]'}`}
             >
               <div className={`w-3 h-3 rounded-sm flex-shrink-0 ${p.color}`} />
               <div className="min-w-0">
-                <p className={`text-[12px] font-medium truncate ${selected === p.id ? 'text-[#1A1A1A]' : 'text-[#444]'}`}>{p.name}</p>
+                <p className={`text-[12px] font-medium truncate ${selected === p.id ? 'text-[#3730A3]' : 'text-[#444]'}`}>{p.name}</p>
               </div>
-              {selected === p.id && <span className="ml-auto text-[10px] text-[#888] flex-shrink-0">✓</span>}
+              {selected === p.id && <span className="ml-auto text-[10px] text-[#4F46E5] flex-shrink-0">✓</span>}
             </button>
           ))}
         </div>
@@ -571,7 +660,7 @@ const wfTypeStyles: Record<WorkflowTask['type'], string> = {
 }
 
 export function WorkflowTypeTag({ type }: { type: WorkflowTask['type'] }) {
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${wfTypeStyles[type]}`}>{type}</span>
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap ${wfTypeStyles[type]}`}>{type}</span>
 }
 
 export function WorkflowTaskRow({ task, onClick, onAcknowledge, onComplete }: { task: WorkflowTask; onClick?: () => void; onAcknowledge?: () => void; onComplete?: () => void }) {
@@ -584,7 +673,7 @@ export function WorkflowTaskRow({ task, onClick, onAcknowledge, onComplete }: { 
             <WorkflowTypeTag type={task.type} />
             <span className="text-[9px] text-[#CCCCCC] uppercase tracking-wider">Auto-generated</span>
           </div>
-          <p className="text-[12.5px] font-medium text-[#1A1A1A]">{task.title}</p>
+          <p className="text-[12.5px] font-medium text-[#1A1A1A] line-clamp-2" title={task.title}>{task.title}</p>
           <p className="text-[10.5px] text-[#AAAAAA] mt-0.5">{task.triggeredBy} · {task.createdAt}</p>
         </div>
       </div>
@@ -666,7 +755,7 @@ export function RelationshipRow({ label, value, onClick, badge }: { label: strin
       {value === '—' || value === ''
         ? <span className="text-[11.5px] text-[#CCCCCC] italic">Not linked</span>
         : onClick
-          ? <button onClick={onClick} className="text-[11.5px] font-medium text-[#1A1A1A] hover:underline text-right">{value}</button>
+          ? <button onClick={onClick} className="text-[11.5px] font-medium text-[#4F46E5] hover:underline text-right">{value}</button>
           : <span className="text-[11.5px] font-medium text-[#333] text-right">{value}</span>}
       {badge && <Tag label={badge} variant="muted" />}
     </div>

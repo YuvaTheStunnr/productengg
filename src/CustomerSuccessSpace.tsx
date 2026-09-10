@@ -13,14 +13,15 @@ import { useState } from 'react'
 import {
   PRODUCTS, ACCOUNTS, CUSTOMER_REQUESTS, INITIATIVES,
   getAccount, getInitiative, getEpic, getStory, storyBreadcrumb, requestsForAccount, requestsForInitiative, initiativesForRequest,
-  initiativePct,
+  requestsForProduct, accountsForProduct,
+  initiativePct, initiativeHealth,
   customerFacingInitiativeUpdate, customerFacingEpicUpdates, customerFacingReleaseStatus,
   workflowTasksForSpace, pendingWorkflowCount, acknowledgeWorkflowTask, completeWorkflowTask,
   type RequestStatus, type Initiative, type WorkflowTask,
 } from './data'
 import {
-  CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, RequestStageBadge,
-  WorkflowQueue, EmptyState, DetailRow, Breadcrumb,
+  CardShell, SectionLabel, ProgressBar, ProgressLabel, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, RequestStageBadge,
+  WorkflowQueue, EmptyState, DetailRow, Breadcrumb, ProductSwitcher,
 } from './ui'
 import { CustomerRequestDetail, CreateCustomerRequest, type Nav } from './entities'
 
@@ -32,6 +33,14 @@ type Screen =
 
 const NEEDS_ATTENTION: RequestStatus[] = ['New', 'Under Review']
 const OPEN_STAGES: RequestStatus[] = ['New', 'Under Review', 'Accepted', 'Linked to Initiative', 'In Progress']
+
+// Unlike PM (always scoped to one product), a CS rep routinely covers
+// several products at once — so the switcher offers an explicit "All
+// Products" option, and starts there rather than defaulting to one product.
+const CS_PRODUCT_OPTIONS = [
+  { id: 'all', name: 'All Products', description: 'Everything, across every product.', color: 'bg-[#CCCCCC]' },
+  ...PRODUCTS,
+]
 
 // CS has no Story/Epic/Bug screens — a workflow task that originated from
 // one of those (e.g. Engineering flagging a blocker) resolves up to the
@@ -47,8 +56,8 @@ function wfTargetInitiativeId(task: WorkflowTask): string | undefined {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-function Sidebar({ nav, navigate }: { nav: Screen; navigate: (s: Screen) => void }) {
-  const needsAttention = CUSTOMER_REQUESTS.filter(r => NEEDS_ATTENTION.includes(r.stage)).length
+function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate: (s: Screen) => void; product: string; setProduct: (p: string) => void }) {
+  const needsAttention = requestsForProduct(product).filter(r => NEEDS_ATTENTION.includes(r.stage)).length
   const pendingWf = pendingWorkflowCount('customer-success')
   return (
     <SidebarShell
@@ -64,20 +73,22 @@ function Sidebar({ nav, navigate }: { nav: Screen; navigate: (s: Screen) => void
       userName="Nina Patel"
       userRole="Customer Success Lead"
       projectName="Customer Success"
+      topSlot={<ProductSwitcher products={CS_PRODUCT_OPTIONS} selected={product} onChange={setProduct} />}
     />
   )
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
-  const needsAttention = CUSTOMER_REQUESTS.filter(r => NEEDS_ATTENTION.includes(r.stage))
-  const openCount = CUSTOMER_REQUESTS.filter(r => OPEN_STAGES.includes(r.stage)).length
-  const linkedActive = CUSTOMER_REQUESTS.filter(r => r.stage === 'Linked to Initiative' || r.stage === 'In Progress').length
-  const released = CUSTOMER_REQUESTS.filter(r => r.stage === 'Released').length
+function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) => void; product: string }) {
+  const requests = requestsForProduct(product)
+  const needsAttention = requests.filter(r => NEEDS_ATTENTION.includes(r.stage))
+  const openCount = requests.filter(r => OPEN_STAGES.includes(r.stage)).length
+  const linkedActive = requests.filter(r => r.stage === 'Linked to Initiative' || r.stage === 'In Progress').length
+  const released = requests.filter(r => r.stage === 'Released').length
   const wfQueue = workflowTasksForSpace('customer-success')
-  const linkedInitiativeIds = Array.from(new Set(CUSTOMER_REQUESTS.flatMap(r => r.initiativeIds)))
-  const linkedInitiatives = linkedInitiativeIds.map(id => getInitiative(id))
+  const linkedInitiativeIds = Array.from(new Set(requests.flatMap(r => r.initiativeIds)))
+  const linkedInitiatives = linkedInitiativeIds.map(id => getInitiative(id)).filter(i => product === 'all' || i.productIds.includes(product))
 
   return (
     <WorkspaceShell title="Customer Success Dashboard" subtitle="What customers are waiting on, translated from the delivery graph"
@@ -89,7 +100,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
         <KPITile label="Workflow Tasks" value={String(wfQueue.filter(w => w.status !== 'Done').length)} alert={wfQueue.filter(w => w.status !== 'Done').length > 0} />
       </div>
 
-      <div className="grid grid-cols-[1fr_288px] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_288px] gap-4">
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
@@ -118,10 +129,10 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
               <div key={init.id} className="px-4 py-3 border-b border-[#F5F5F5] last:border-0 cursor-pointer hover:bg-[#FAFAFA]" onClick={() => navigate('initiative-detail', init.id)}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[12.5px] font-medium text-[#1A1A1A]">{init.title}</span>
-                  <span className="text-[11px] text-[#888]">{initiativePct(init)}%</span>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[11px] text-[#888]" />
                 </div>
                 <p className="text-[11.5px] text-[#666] leading-snug mb-1.5">{customerFacingInitiativeUpdate(init)}</p>
-                <ProgressBar pct={initiativePct(init)} />
+                <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
               </div>
             ))}
           </CardShell>
@@ -143,7 +154,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
               'CR-4 has been Under Review for 2 weeks — check in with PM on prioritisation',
             ].map((s, i) => (
               <div key={i} className="flex items-start gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
-                <span className="w-4 h-4 bg-[#1A1A1A] text-white text-[8px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="w-4 h-4 bg-[#4F46E5] text-white text-[8px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                 <p className="text-[11.5px] text-[#444] leading-snug">{s}</p>
               </div>
             ))}
@@ -155,7 +166,7 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
         <CardShell className="p-4">
           <SectionLabel>Requests by Stage</SectionLabel>
           {(['New', 'Under Review', 'Accepted', 'Linked to Initiative', 'In Progress', 'Released', 'Closed', 'Rejected'] as RequestStatus[]).map(stage => {
-            const count = CUSTOMER_REQUESTS.filter(r => r.stage === stage).length
+            const count = requests.filter(r => r.stage === stage).length
             return (
               <div key={stage} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{stage}</span><span className="font-medium text-[#333]">{count}</span></div>
             )
@@ -163,14 +174,14 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
         </CardShell>
         <CardShell className="p-4">
           <SectionLabel>Requests by Account</SectionLabel>
-          {ACCOUNTS.map(acct => {
-            const count = requestsForAccount(acct.id).length
+          {accountsForProduct(product).map(acct => {
+            const count = requestsForAccount(acct.id).filter(r => product === 'all' || requests.includes(r)).length
             return (
               <div key={acct.id} className="flex items-center justify-between text-[11px] py-1.5 border-b border-[#F5F5F5] last:border-0"><span className="text-[#666]">{acct.name}</span><span className="font-medium text-[#333]">{count}</span></div>
             )
           })}
           {(() => {
-            const noAccount = CUSTOMER_REQUESTS.filter(r => !r.accountId).length
+            const noAccount = requests.filter(r => !r.accountId).length
             return noAccount > 0 ? <div className="flex items-center justify-between text-[11px] py-1.5"><span className="text-[#AAAAAA] italic">No account</span><span className="font-medium text-[#333]">{noAccount}</span></div> : null
           })()}
         </CardShell>
@@ -181,16 +192,17 @@ function Dashboard({ navigate }: { navigate: (s: Screen, id?: string) => void })
 
 // ─── Customer Requests ──────────────────────────────────────────────────────
 
-function RequestList({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
+function RequestList({ navigate, product }: { navigate: (s: Screen, id?: string) => void; product: string }) {
   const [filter, setFilter] = useState<'needs-attention' | 'all'>('needs-attention')
-  const requests = filter === 'needs-attention' ? CUSTOMER_REQUESTS.filter(r => NEEDS_ATTENTION.includes(r.stage)) : CUSTOMER_REQUESTS
+  const scoped = requestsForProduct(product)
+  const requests = filter === 'needs-attention' ? scoped.filter(r => NEEDS_ATTENTION.includes(r.stage)) : scoped
 
   return (
     <WorkspaceShell title="Customer Requests" subtitle="Every ask from Customer Success, Sales and Support — linking to an initiative is a decision made once a plan exists."
       actions={<Btn variant="primary" onClick={() => navigate('create-request')}>+ Log Request</Btn>}>
       <div className="flex items-center gap-2 mb-4">
         {([{ id: 'needs-attention', label: 'Needs Triage' }, { id: 'all', label: 'All Requests' }] as const).map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f.id ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f.label}</button>
+          <button key={f.id} onClick={() => setFilter(f.id)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f.id ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f.label}</button>
         ))}
       </div>
       <div className="flex flex-col gap-3">
@@ -217,7 +229,13 @@ function RequestList({ navigate }: { navigate: (s: Screen, id?: string) => void 
             </CardShell>
           )
         })}
-        {requests.length === 0 && <EmptyState icon="✓" title="Nothing here" sub="Switch filters to see the full list." />}
+        {requests.length === 0 && (
+          <EmptyState
+            icon="✓"
+            title="Nothing here"
+            sub={scoped.length === 0 && product !== 'all' ? 'No requests touch this product yet — try All Products.' : 'Switch filters to see the full list.'}
+          />
+        )}
       </div>
     </WorkspaceShell>
   )
@@ -225,12 +243,15 @@ function RequestList({ navigate }: { navigate: (s: Screen, id?: string) => void 
 
 // ─── Accounts ───────────────────────────────────────────────────────────────
 
-function AccountList({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
+function AccountList({ navigate, product }: { navigate: (s: Screen, id?: string) => void; product: string }) {
+  const accounts = accountsForProduct(product)
   return (
     <WorkspaceShell title="Accounts" subtitle="The customers behind each request">
       <div className="flex flex-col gap-3">
-        {ACCOUNTS.map(acct => {
-          const requests = requestsForAccount(acct.id)
+        {accounts.length === 0 && <EmptyState title="No accounts touch this product yet" sub="Try All Products." />}
+        {accounts.map(acct => {
+          const acctRequests = requestsForAccount(acct.id)
+          const requests = product === 'all' ? acctRequests : acctRequests.filter(r => initiativesForRequest(r).some(i => i.productIds.includes(product)))
           const open = requests.filter(r => OPEN_STAGES.includes(r.stage))
           return (
             <CardShell key={acct.id} onClick={() => navigate('account-detail', acct.id)}>
@@ -261,7 +282,7 @@ function AccountDetail({ id, nav, navigate }: { id: string; nav: Nav; navigate: 
     <WorkspaceShell
       title={<div><Breadcrumb items={[{ label: 'Accounts', screen: 'account-list' }, { label: account.name }]} onNavigate={s => nav(s)} /><h1 className="text-[15px] font-semibold text-[#1A1A1A]">{account.name}</h1></div>}
     >
-      <div className="grid grid-cols-[1fr_260px] gap-5 max-w-4xl">
+      <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-5 max-w-4xl">
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0]"><span className="text-[12px] font-semibold text-[#333]">Requests</span></div>
@@ -304,8 +325,8 @@ function AccountDetail({ id, nav, navigate }: { id: string; nav: Nav; navigate: 
 // Risks and internal milestones. CS gets a purpose-built summary: what's
 // happening, in plain language, plus which requests brought it here.
 
-function InitiativeListCS({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
-  const linked = INITIATIVES.filter(init => requestsForInitiative(init).length > 0)
+function InitiativeListCS({ navigate, product }: { navigate: (s: Screen, id?: string) => void; product: string }) {
+  const linked = INITIATIVES.filter(init => requestsForInitiative(init).length > 0 && (product === 'all' || init.productIds.includes(product)))
   return (
     <WorkspaceShell title="Linked Initiatives" subtitle="Planned work that at least one customer request is tracking against">
       <div className="flex flex-col gap-3">
@@ -316,10 +337,10 @@ function InitiativeListCS({ navigate }: { navigate: (s: Screen, id?: string) => 
               <div className="px-5 py-4">
                 <div className="flex items-start justify-between gap-4 mb-2">
                   <h3 className="text-[13.5px] font-semibold text-[#1A1A1A]">{init.title}</h3>
-                  <span className="text-[11px] text-[#888] flex-shrink-0">{initiativePct(init)}%</span>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[11px] text-[#888] flex-shrink-0" />
                 </div>
                 <p className="text-[12px] text-[#666] leading-relaxed mb-2">{customerFacingInitiativeUpdate(init)}</p>
-                <ProgressBar pct={initiativePct(init)} />
+                <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
                 <div className="flex items-center gap-3 pt-3 mt-2 border-t border-[#F5F5F5] text-[11px] text-[#888]">
                   <span>{requests.length} linked request{requests.length > 1 ? 's' : ''}</span>
                   <span>{customerFacingReleaseStatus(init)}</span>
@@ -361,7 +382,7 @@ function InitiativeDetailCS({ id, nav, navigate }: { id: string; nav: Nav; navig
     <WorkspaceShell
       title={<div><Breadcrumb items={[{ label: 'Linked Initiatives', screen: 'initiative-list' }, { label: init.title }]} onNavigate={s => nav(s)} /><h1 className="text-[15px] font-semibold text-[#1A1A1A]">{init.title}</h1></div>}
     >
-      <div className="grid grid-cols-[1fr_280px] gap-5 max-w-5xl">
+      <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5 max-w-5xl">
         <div className="flex flex-col gap-4">
           <CardShell className="p-4">
             <SectionLabel>What this means for customers</SectionLabel>
@@ -400,10 +421,10 @@ function InitiativeDetailCS({ id, nav, navigate }: { id: string; nav: Nav; navig
           <CardShell className="p-4">
             <SectionLabel>Progress</SectionLabel>
             <div className="text-center py-3">
-              <p className="text-[30px] font-bold text-[#1A1A1A]">{initiativePct(init)}%</p>
+              <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[30px] font-bold text-[#1A1A1A] block" />
               <p className="text-[11px] text-[#AAAAAA]">Overall completion</p>
             </div>
-            <ProgressBar pct={initiativePct(init)} />
+            <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
           </CardShell>
           <CardShell className="p-4">
             <SectionLabel>Products</SectionLabel>
@@ -424,7 +445,9 @@ function InitiativeDetailCS({ id, nav, navigate }: { id: string; nav: Nav; navig
 
 export function CustomerSuccessSpace({ onContextChange }: { onContextChange: (ctx: { title: string; prompts: string[]; product?: string; entity?: string }) => void }) {
   const [nav, setNav] = useState<{ screen: Screen; id?: string }>({ screen: 'dashboard' })
+  const [product, setProduct] = useState('all')
   const shared: Nav = (screen, id) => navigate(screen as Screen, id)
+  const productName = CS_PRODUCT_OPTIONS.find(p => p.id === product)?.name ?? ''
 
   const navigate = (screen: Screen, id?: string) => {
     setNav({ screen, id })
@@ -438,20 +461,20 @@ export function CustomerSuccessSpace({ onContextChange }: { onContextChange: (ct
       'initiative-list': { title: 'Linked Initiatives', prompts: ['Summarise progress across linked initiatives', 'Which are at risk of slipping?'] },
       'initiative-detail': { title: 'Initiative Progress', prompts: ['Draft a customer-facing update', 'When will this ship?'] },
     }
-    onContextChange({ ...ctxMap[screen] })
+    onContextChange({ ...ctxMap[screen], product: product === 'all' ? undefined : productName })
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
-      <Sidebar nav={nav.screen} navigate={navigate} />
-      <main className="flex-1 overflow-hidden">
-        {nav.screen === 'dashboard' && <Dashboard navigate={navigate} />}
-        {nav.screen === 'request-list' && <RequestList navigate={navigate} />}
+    <div className="flex flex-1 h-full min-w-0 overflow-hidden">
+      <Sidebar nav={nav.screen} navigate={navigate} product={product} setProduct={setProduct} />
+      <main className="flex-1 min-w-0 overflow-hidden">
+        {nav.screen === 'dashboard' && <Dashboard navigate={navigate} product={product} />}
+        {nav.screen === 'request-list' && <RequestList navigate={navigate} product={product} />}
         {nav.screen === 'request-detail' && <CustomerRequestDetail id={nav.id ?? CUSTOMER_REQUESTS[0].id} nav={shared} role="customer-success" />}
         {nav.screen === 'create-request' && <CreateCustomerRequest nav={shared} />}
-        {nav.screen === 'account-list' && <AccountList navigate={navigate} />}
+        {nav.screen === 'account-list' && <AccountList navigate={navigate} product={product} />}
         {nav.screen === 'account-detail' && <AccountDetail id={nav.id ?? ACCOUNTS[0].id} nav={shared} navigate={navigate} />}
-        {nav.screen === 'initiative-list' && <InitiativeListCS navigate={navigate} />}
+        {nav.screen === 'initiative-list' && <InitiativeListCS navigate={navigate} product={product} />}
         {nav.screen === 'initiative-detail' && <InitiativeDetailCS id={nav.id ?? INITIATIVES[0].id} nav={shared} navigate={navigate} />}
       </main>
     </div>

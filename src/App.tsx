@@ -24,11 +24,14 @@ interface Message {
 
 // ─── Space config ─────────────────────────────────────────────────────────────
 
+// Each space gets its own identity hue — distinct from the health/severity
+// vocabulary (green/amber/red) so a space color is never mistaken for a
+// status — used in the space switcher, sidebar user chip, and header avatar.
 const SPACES: { id: Space; label: string; user: string; role: string; color: string }[] = [
-  { id: 'leadership', label: 'Leadership', user: 'Jamie Okonkwo', role: 'VP Product', color: 'bg-[#444]' },
-  { id: 'pm', label: 'Product Manager', user: 'Alex Chen', role: 'Product Lead', color: 'bg-[#555]' },
-  { id: 'engineering', label: 'Engineering', user: 'Morgan Tse', role: 'iOS Engineer', color: 'bg-[#333]' },
-  { id: 'qa', label: 'QA', user: 'Dana Rao', role: 'QA Lead', color: 'bg-[#666]' },
+  { id: 'leadership', label: 'Leadership', user: 'Jamie Okonkwo', role: 'VP Product', color: 'bg-[#4F46E5]' },
+  { id: 'pm', label: 'Product Manager', user: 'Alex Chen', role: 'Product Lead', color: 'bg-[#2563EB]' },
+  { id: 'engineering', label: 'Engineering', user: 'Morgan Tse', role: 'iOS Engineer', color: 'bg-[#7C3AED]' },
+  { id: 'qa', label: 'QA', user: 'Dana Rao', role: 'QA Lead', color: 'bg-[#0D9488]' },
   { id: 'customer-success', label: 'Customer Success', user: 'Nina Patel', role: 'Customer Success Lead', color: 'bg-[#8A6D4B]' },
 ]
 
@@ -97,16 +100,16 @@ function SpaceSelector({ space, setSpace }: { space: Space; setSpace: (s: Space)
             <button
               key={s.id}
               onClick={() => { setSpace(s.id); setOpen(false) }}
-              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${space === s.id ? 'bg-[#F5F5F5]' : 'hover:bg-[#F9F9F9]'}`}
+              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${space === s.id ? 'bg-[#EEF2FF]' : 'hover:bg-[#F9F9F9]'}`}
             >
               <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center ${s.color}`}>
                 <span className="text-[8px] font-bold text-white">{s.user.split(' ').map(w => w[0]).join('')}</span>
               </div>
               <div>
-                <p className={`text-[12px] font-medium ${space === s.id ? 'text-[#1A1A1A]' : 'text-[#444]'}`}>{s.label}</p>
+                <p className={`text-[12px] font-medium ${space === s.id ? 'text-[#3730A3]' : 'text-[#444]'}`}>{s.label}</p>
                 <p className="text-[10px] text-[#AAAAAA]">{s.user} · {s.role}</p>
               </div>
-              {space === s.id && <span className="ml-auto text-[10px] text-[#888]">✓</span>}
+              {space === s.id && <span className="ml-auto text-[10px] text-[#4F46E5]">✓</span>}
             </button>
           ))}
         </div>
@@ -121,13 +124,30 @@ function AIPanel({ space, context, onClose }: { space: Space; context: AIContext
   const [messages, setMessages] = useState<Message[]>(SEED_MESSAGES[space])
   const [input, setInput] = useState('')
   const prevSpace = useRef(space)
+  const prevTitle = useRef(context.title)
 
+  // The transcript used to only reset when you switched spaces, so a Bug
+  // Detail screen opened with the same "Cycle 14 is 58% complete…" exchange
+  // that was written for the Dashboard — implying context the AI never
+  // actually had. The scripted seed conversation is only shown on each
+  // space's own Dashboard (what it was authored for); navigating anywhere
+  // else starts a short opener grounded in the screen actually being viewed.
   useEffect(() => {
     if (prevSpace.current !== space) {
       setMessages(SEED_MESSAGES[space])
       prevSpace.current = space
+      prevTitle.current = context.title
+      return
     }
-  }, [space])
+    if (prevTitle.current !== context.title) {
+      setMessages(
+        context.title.endsWith('Dashboard')
+          ? SEED_MESSAGES[space]
+          : [{ from: 'ai', text: `What do you need for ${context.title}${context.entity ? ` — ${context.entity}` : ''}?` }]
+      )
+      prevTitle.current = context.title
+    }
+  }, [space, context.title, context.entity])
 
   const send = () => {
     if (!input.trim()) return
@@ -178,12 +198,12 @@ function AIPanel({ space, context, onClose }: { space: Space; context: AIContext
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2 ${m.from === 'user' ? 'flex-row-reverse' : ''}`}>
             {m.from === 'ai' && (
-              <div className="w-6 h-6 bg-[#1A1A1A] rounded-full flex-shrink-0 flex items-center justify-center mt-0.5">
+              <div className="w-6 h-6 bg-[#4F46E5] rounded-full flex-shrink-0 flex items-center justify-center mt-0.5">
                 <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[5px] border-b-white mt-0.5" />
               </div>
             )}
             <div className={`max-w-[220px] px-3 py-2 rounded-lg text-[11.5px] leading-relaxed
-              ${m.from === 'ai' ? 'bg-[#F5F5F5] text-[#333] rounded-tl-none' : 'bg-[#1A1A1A] text-white rounded-tr-none'}`}>
+              ${m.from === 'ai' ? 'bg-[#F5F5F5] text-[#333] rounded-tl-none' : 'bg-[#4F46E5] text-white rounded-tr-none'}`}>
               {m.context && m.from === 'ai' && <p className="text-[9px] text-[#AAAAAA] mb-1 uppercase tracking-wider">{m.context}</p>}
               {m.text}
             </div>
@@ -193,7 +213,7 @@ function AIPanel({ space, context, onClose }: { space: Space; context: AIContext
 
       {/* Input */}
       <div className="px-4 py-3 border-t border-[#E4E4E4] flex-shrink-0">
-        <div className="flex items-center gap-2 border border-[#D8D8D8] rounded-lg px-3 py-2 bg-[#FAFAFA]">
+        <div className="flex items-center gap-2 border border-[#D8D8D8] rounded-lg px-3 py-2 bg-[#FAFAFA] transition-colors focus-within:border-[#4F46E5] focus-within:ring-2 focus-within:ring-[#4F46E5]/15">
           <input
             type="text"
             value={input}
@@ -202,7 +222,7 @@ function AIPanel({ space, context, onClose }: { space: Space; context: AIContext
             placeholder="Ask DXOne AI..."
             className="flex-1 bg-transparent text-[12px] text-[#333] placeholder-[#BBBBBB] outline-none"
           />
-          <button onClick={send} className="w-6 h-6 bg-[#1A1A1A] rounded flex items-center justify-center flex-shrink-0 hover:bg-[#333]">
+          <button onClick={send} className="w-6 h-6 bg-[#4F46E5] rounded flex items-center justify-center flex-shrink-0 hover:bg-[#4338CA]">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <path d="M5 8V2M2 5l3-3 3 3" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -228,7 +248,7 @@ function AppHeader({ space, setSpace, aiOpen, setAIOpen }: {
       {/* Left: brand + space selector */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-[#1A1A1A] rounded flex items-center justify-center">
+          <div className="w-5 h-5 bg-[#4F46E5] rounded flex items-center justify-center">
             <div className="w-2.5 h-2.5 bg-white rounded-sm" />
           </div>
           <span className="text-[13px] font-semibold text-[#1A1A1A]">DXOne</span>
@@ -252,7 +272,7 @@ function AppHeader({ space, setSpace, aiOpen, setAIOpen }: {
         <button
           onClick={() => setAIOpen(!aiOpen)}
           className={`flex items-center gap-1.5 px-3 py-1 rounded border text-[11.5px] font-medium transition-colors
-            ${aiOpen ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#555] hover:bg-[#F5F5F5]'}`}
+            ${aiOpen ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#555] hover:bg-[#F5F5F5]'}`}
         >
           DXOne AI
         </button>

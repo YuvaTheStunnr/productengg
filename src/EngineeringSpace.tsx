@@ -4,7 +4,7 @@ import {
   storiesForProduct, tasksForStory, taskHealth, taskPct, storyHealth, releaseHealth,
   workflowTasksForSpace, acknowledgeWorkflowTask, completeWorkflowTask,
 } from './data'
-import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, ProductSwitcher, WorkflowQueue, EmptyState } from './ui'
+import { HealthBadge, StatusPair, CardShell, SectionLabel, ProgressBar, ProgressLabel, KPITile, SidebarShell, WorkspaceShell, Btn, Tag, ProductSwitcher, WorkflowQueue, EmptyState, HScroll, plural } from './ui'
 import { StoryDetail, CreateStory, TaskDetail, CreateTask, CreateSubtask, BugDetail, ReleaseDetail, HotfixList, HotfixDetail, CreateHotfix, type Nav } from './entities'
 
 type Screen = 'dashboard' | 'my-tasks' | 'board' | 'story-list' | 'story-detail' | 'create-story' | 'task-detail' | 'create-task' | 'create-subtask' | 'release-list' | 'release-detail' | 'bug-detail' | 'hotfix-list' | 'hotfix-detail' | 'create-hotfix'
@@ -25,7 +25,7 @@ function Sidebar({ nav, navigate, product, setProduct }: { nav: Screen; navigate
       ]}
       nav={nav}
       navigate={navigate}
-      spaceColor="bg-[#333]"
+      spaceColor="bg-[#7C3AED]"
       userName={ME}
       userRole="iOS Engineer"
       projectName="Engineering Space"
@@ -62,7 +62,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
         <KPITile label="Workflow Tasks" value={String(wfQueue.filter(t => t.status !== 'Done').length)} alert={wfQueue.some(t => t.status === 'Pending')} />
       </div>
 
-      <div className="grid grid-cols-[1fr_296px] gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_296px] gap-4">
         <div className="flex flex-col gap-4">
           <CardShell>
             <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center justify-between">
@@ -93,7 +93,7 @@ function Dashboard({ navigate, product }: { navigate: (s: Screen, id?: string) =
           </CardShell>
 
           <CardShell>
-            <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">Code Reviews Pending</span><span className="text-[10px] bg-[#1A1A1A] text-white px-1.5 py-0.5 rounded-full">2</span></div>
+            <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">Code Reviews Pending</span><span className="text-[10px] bg-[#4F46E5] text-white px-1.5 py-0.5 rounded-full">2</span></div>
             {[
               { pr: 'PR-89', title: 'feat: checkout flow redesign', author: 'Sam Liu', age: '18h', lines: '+342 / -128', story: 'STORY-8' },
               { pr: 'PR-91', title: 'fix: session expiry edge case', author: 'Sam Liu', age: '4h', lines: '+22 / -8', story: 'STORY-2' },
@@ -158,7 +158,7 @@ function MyTasks({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
       <div className="flex flex-col gap-4 max-w-4xl">
         {groups.map(group => (
           <CardShell key={group.label}>
-            <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">{group.label}</span><span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{group.tasks.length}</span></div>
+            <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2"><span className="text-[12px] font-semibold text-[#333]">{group.label}</span><span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{group.tasks.length}</span></div>
             {group.tasks.map(task => {
               const story = STORIES.find(s => s.id === task.storyId)
               const epic = story ? EPICS.find(e => e.id === story.epicId) : null
@@ -179,7 +179,7 @@ function MyTasks({ navigate }: { navigate: (s: Screen, id?: string) => void }) {
                     {task.prNumber && <span className="text-[#AAAAAA]">PR #{task.prNumber}</span>}
                   </div>
                   {taskPct(task) > 0 && task.workflowState !== 'Released' && (
-                    <div className="flex items-center gap-2 mt-1.5"><div className="w-24"><ProgressBar pct={taskPct(task)} thin /></div><span className="text-[10px] text-[#BBBBBB]">{taskPct(task)}%</span></div>
+                    <div className="flex items-center gap-2 mt-1.5"><div className="w-24"><ProgressBar pct={taskPct(task)} thin health={taskHealth(task)} /></div><ProgressLabel pct={taskPct(task)} health={taskHealth(task)} className="text-[10px] text-[#BBBBBB]" /></div>
                   )}
                 </div>
               )
@@ -206,12 +206,12 @@ function Board({ navigate, product }: { navigate: (s: Screen, id?: string) => vo
 
   return (
     <WorkspaceShell title={cycle ? `${cycle.name} Board` : 'Board'} subtitle={cycle ? `${cycle.startDate} – ${cycle.endDate}` : 'No active cycle for this product'} actions={<><Btn small>Filter: Me</Btn><Btn variant="primary" small onClick={() => navigate('create-task')}>+ Task</Btn></>} noPad>
-      <div className="flex gap-4 h-full overflow-x-auto px-6 py-5">
+      <HScroll className="flex gap-4 px-6 py-5" fullHeight>
         {columns.map(col => (
           <div key={col.id} className="flex-shrink-0 w-64 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-semibold text-[#555]">{col.label}</span>
-              <div className="flex items-center gap-1.5"><span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{col.tasks.length}</span><span className="text-[10px] text-[#BBBBBB]">{col.tasks.reduce((a, t) => a + t.estimate, 0)}h</span></div>
+              <div className="flex items-center gap-1.5"><span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{col.tasks.length}</span><span className="text-[10px] text-[#BBBBBB]">{col.tasks.reduce((a, t) => a + t.estimate, 0)}h</span></div>
             </div>
             <div className="flex flex-col gap-2 flex-1">
               {col.tasks.map(task => {
@@ -223,7 +223,7 @@ function Board({ navigate, product }: { navigate: (s: Screen, id?: string) => vo
                     {task.branch && <p className="font-mono text-[10px] text-[#AAAAAA] mb-2 truncate">{task.branch}</p>}
                     <div className="flex flex-wrap gap-1 mb-2"><span className="text-[9px] text-[#CCCCCC] font-mono">{story?.id?.toUpperCase()}</span>{epic && <Tag label={epic.title} variant="muted" />}</div>
                     <div className="flex items-center justify-between mt-1"><span className="text-[10px] text-[#BBBBBB]">{task.assignee.split(' ')[0]}</span><HealthBadge health={taskHealth(task)} /></div>
-                    {taskPct(task) > 0 && <div className="mt-2 pt-2 border-t border-[#F5F5F5]"><ProgressBar pct={taskPct(task)} thin /></div>}
+                    {taskPct(task) > 0 && <div className="mt-2 pt-2 border-t border-[#F5F5F5]"><ProgressBar pct={taskPct(task)} thin health={taskHealth(task)} /></div>}
                   </CardShell>
                 )
               })}
@@ -231,7 +231,7 @@ function Board({ navigate, product }: { navigate: (s: Screen, id?: string) => vo
             </div>
           </div>
         ))}
-      </div>
+      </HScroll>
     </WorkspaceShell>
   )
 }
@@ -246,7 +246,7 @@ function StoryList({ navigate, product }: { navigate: (s: Screen, id?: string) =
     <WorkspaceShell title="Stories" subtitle="Engineering works at the story level — initiatives appear only as contextual metadata" actions={<Btn variant="primary" onClick={() => navigate('create-story')}>+ Create Story</Btn>}>
       <div className="flex items-center gap-2 mb-4">
         {(['mine', 'all'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f === 'mine' ? 'Assigned to me' : 'All stories'}</button>
+          <button key={f} onClick={() => setFilter(f)} className={`text-[11.5px] px-3 py-1.5 rounded-full border transition-colors ${filter === f ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'border-[#E0E0E0] text-[#666] hover:bg-[#F5F5F5]'}`}>{f === 'mine' ? 'Assigned to me' : 'All stories'}</button>
         ))}
       </div>
       <div className="flex flex-col gap-2">
@@ -259,7 +259,7 @@ function StoryList({ navigate, product }: { navigate: (s: Screen, id?: string) =
                   <span className="text-[10px] font-mono text-[#CCCCCC] flex-shrink-0">{story.id.toUpperCase()}</span>
                   <span className="text-[12.5px] text-[#333] truncate">{story.title}</span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-[#BBBBBB]">{tasks.length} tasks</span><Tag label={`${story.points} pts`} variant="muted" /><StatusPair workflow={story.workflowState} health={storyHealth(story)} /></div>
+                <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-[#BBBBBB]">{tasks.length} {plural(tasks.length, 'task')}</span><Tag label={`${story.points} pts`} variant="muted" /><StatusPair workflow={story.workflowState} health={storyHealth(story)} /></div>
               </div>
             </CardShell>
           )
@@ -320,9 +320,9 @@ export function EngineeringSpace({ onContextChange }: { onContextChange: (ctx: {
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
+    <div className="flex flex-1 h-full min-w-0 overflow-hidden">
       <Sidebar nav={nav.screen} navigate={navigate} product={product} setProduct={setProduct} />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 min-w-0 overflow-hidden">
         {nav.screen === 'dashboard' && <Dashboard navigate={navigate} product={product} />}
         {nav.screen === 'my-tasks' && <MyTasks navigate={navigate} />}
         {nav.screen === 'board' && <Board navigate={navigate} product={product} />}

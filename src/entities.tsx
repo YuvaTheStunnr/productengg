@@ -25,7 +25,7 @@ import {
   type Idea, type CustomerRequest, type RequestStatus, type Priority,
 } from './data'
 import {
-  WorkflowBadge, HealthBadge, StatusPair, SeverityBadge, CardShell, SectionLabel, ProgressBar, Breadcrumb, WorkspaceShell,
+  WorkflowBadge, HealthBadge, StatusPair, SeverityBadge, CardShell, SectionLabel, ProgressBar, ProgressLabel, Breadcrumb, WorkspaceShell,
   Btn, Divider, Tag, CommentThread, TabBar, DetailRow, AttachmentList, ActivityTimeline, RelationshipRow, WorkflowQueue, EmptyState,
   RequestStageBadge,
 } from './ui'
@@ -35,8 +35,8 @@ export type Role = 'leadership' | 'pm' | 'engineering' | 'qa' | 'customer-succes
 
 // ─── Shared form primitives ─────────────────────────────────────────────────────
 
-export const inputCls = 'w-full border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#1A1A1A] bg-white outline-none focus:border-[#888]'
-export const selectCls = 'w-full border border-[#E0E0E0] rounded-md px-3 py-2 text-[12px] text-[#444] bg-white outline-none'
+export const inputCls = 'w-full border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#1A1A1A] bg-white outline-none focus:border-[#4F46E5] focus:ring-2 focus:ring-[#4F46E5]/15 transition-colors'
+export const selectCls = 'w-full border border-[#E0E0E0] rounded-md px-3 py-2 text-[12px] text-[#444] bg-white outline-none focus:border-[#4F46E5] focus:ring-2 focus:ring-[#4F46E5]/15 transition-colors'
 export const textareaCls = inputCls + ' resize-none'
 
 export function Field({ label, required, children, hint }: { label: string; required?: boolean; children: React.ReactNode; hint?: string }) {
@@ -74,7 +74,7 @@ function WorkflowLinkCard({ sourceType, sourceId }: { sourceType: 'Bug' | 'Story
     <CardShell>
       <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#F0F0F0] flex items-center gap-2">
         <span className="text-[12px] font-semibold text-[#333]">Workflow Orchestration</span>
-        <span className="text-[10px] bg-[#EBEBEB] text-[#777] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
+        <span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{tasks.length}</span>
       </div>
       <WorkflowQueue tasks={tasks} onAcknowledge={acknowledgeWorkflowTask} onComplete={completeWorkflowTask} />
     </CardShell>
@@ -91,10 +91,10 @@ function NotesCard({ entity, canEdit }: { entity: { notes?: string }; canEdit: b
       <SectionLabel>Notes</SectionLabel>
       {canEdit ? (
         <textarea
-          rows={3}
+          rows={4}
           value={draft}
           placeholder="Context for the team — decisions, open questions, anything that doesn't belong in the description…"
-          className={textareaCls}
+          className={`${textareaCls} resize-y`}
           onChange={e => setDraft(e.target.value)}
           onBlur={() => updateNotes(entity, draft)}
         />
@@ -149,7 +149,7 @@ export function IdeaDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
       <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: idea.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_260px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Description</SectionLabel>
@@ -206,7 +206,7 @@ export function CreateIdea({ nav, role }: { nav: Nav; role: Role }) {
     nav('idea-detail', idea.id)
   }
   return (
-    <WorkspaceShell title="New Idea" subtitle="Ideas are lightweight — capture the thought, decide on it later." actions={<Btn small onClick={() => nav('idea-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="New Idea" subtitle="Ideas are lightweight — capture the thought, decide on it later.">
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Ideas', screen: 'idea-list' }, { label: 'New Idea' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
@@ -273,7 +273,7 @@ export function CustomerRequestDetail({ id, nav, role }: { id: string; nav: Nav;
       <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: req.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_280px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Description</SectionLabel>
@@ -346,7 +346,7 @@ export function CreateCustomerRequest({ nav }: { nav: Nav }) {
     nav('request-detail', req.id)
   }
   return (
-    <WorkspaceShell title="Log Customer Request" subtitle="Requests are captured on their own — linking to an initiative is a separate decision made once a plan exists." actions={<Btn small onClick={() => nav('request-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="Log Customer Request" subtitle="Requests are captured on their own — linking to an initiative is a separate decision made once a plan exists.">
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Customer Requests', screen: 'request-list' }, { label: 'New Request' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
@@ -409,7 +409,7 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_280px] gap-5 max-w-5xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5 max-w-5xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Business Goal</SectionLabel>
@@ -423,7 +423,7 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
                   {init.milestones.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No milestones set yet.</p>}
                   {init.milestones.map((m, i) => (
                     <div key={i} className="flex items-center gap-4 py-2.5 pl-8 relative">
-                      <div className={`absolute left-2 w-3 h-3 rounded-full border-2 -translate-x-1/2 ${m.done ? 'bg-[#888] border-[#888]' : 'bg-white border-[#CCCCCC]'}`} />
+                      <div className={`absolute left-2 w-3 h-3 rounded-full border-2 -translate-x-1/2 ${m.done ? 'bg-[#4F46E5] border-[#4F46E5]' : 'bg-white border-[#CCCCCC]'}`} />
                       <span className="text-[12px] text-[#333]">{m.label}</span>
                       <span className="text-[10px] text-[#BBBBBB] ml-auto">{m.date}</span>
                       {m.done && <Tag label="Done" variant="muted" />}
@@ -437,7 +437,7 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
                   {init.risks.map((r, i) => (
                     <div key={i} className="flex items-start justify-between gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
                       <p className="text-[11.5px] text-[#444] leading-snug">{r.text}</p>
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded flex-shrink-0 ${r.severity === 'High' ? 'bg-[#FDF0F0] text-[#CC4444] border border-[#E8CCCC]' : 'bg-[#EBEBEB] text-[#777]'}`}>{r.severity}</span>
+                      <span className="flex-shrink-0"><SeverityBadge severity={r.severity} /></span>
                     </div>
                   ))}
                 </CardShell>
@@ -451,10 +451,10 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
               <CardShell className="p-4">
                 <SectionLabel>Progress</SectionLabel>
                 <div className="text-center py-3">
-                  <p className="text-[30px] font-bold text-[#1A1A1A]">{initiativePct(init)}%</p>
+                  <ProgressLabel pct={initiativePct(init)} health={initiativeHealth(init)} className="text-[30px] font-bold text-[#1A1A1A] block" />
                   <p className="text-[11px] text-[#AAAAAA]">Overall completion</p>
                 </div>
-                <ProgressBar pct={initiativePct(init)} />
+                <ProgressBar pct={initiativePct(init)} health={initiativeHealth(init)} />
               </CardShell>
               <CardShell className="p-4">
                 <SectionLabel>Products</SectionLabel>
@@ -496,8 +496,8 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <span className="text-[11px] text-[#888]">{stories.length} stories</span>
-                      <div className="w-20"><ProgressBar pct={epicPct(epic)} /></div>
-                      <span className="text-[11px] text-[#888] w-8 text-right">{epicPct(epic)}%</span>
+                      <div className="w-20"><ProgressBar pct={epicPct(epic)} health={epicHealth(epic)} /></div>
+                      <ProgressLabel pct={epicPct(epic)} health={epicHealth(epic)} className="text-[11px] text-[#888] w-8 text-right block" />
                     </div>
                   </div>
                 </CardShell>
@@ -534,7 +534,7 @@ export function CreateInitiative({ nav, role }: { nav: Nav; role: Role }) {
   }
 
   return (
-    <WorkspaceShell title="New Initiative" subtitle="Title, business goal, target date and products are all that's required to get started — PM/Eng/QA leads and everything else below can be added later." actions={<Btn small onClick={() => nav('initiative-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="New Initiative" subtitle="Title, business goal, target date and products are all that's required to get started — PM/Eng/QA leads and everything else below can be added later.">
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: 'New Initiative' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
@@ -604,7 +604,7 @@ export function EpicDetail({ id, nav }: { id: string; nav: Nav }) {
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_260px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Description</SectionLabel>
@@ -619,11 +619,14 @@ export function EpicDetail({ id, nav }: { id: string; nav: Nav }) {
             </div>
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
+                <SectionLabel>Progress</SectionLabel>
                 <div className="text-center py-3">
-                  <p className="text-[28px] font-bold text-[#1A1A1A]">{epicPct(epic)}%</p>
-                  <ProgressBar pct={epicPct(epic)} />
+                  <ProgressLabel pct={epicPct(epic)} health={epicHealth(epic)} className="text-[28px] font-bold text-[#1A1A1A] block" />
+                  <p className="text-[11px] text-[#AAAAAA]">Overall completion</p>
                 </div>
-                <DetailRow label="Initiative"><button onClick={() => nav('initiative-detail', init.id)} className="hover:underline">{init.title}</button></DetailRow>
+                <ProgressBar pct={epicPct(epic)} health={epicHealth(epic)} />
+                <Divider className="my-3" />
+                <DetailRow label="Initiative"><button onClick={() => nav('initiative-detail', init.id)} className="text-[#4F46E5] font-medium hover:underline">{init.title}</button></DetailRow>
                 <DetailRow label="Assignee">{epic.assignee}</DetailRow>
                 <DetailRow label="Target Date">{epic.targetDate ?? '—'}</DetailRow>
                 <DetailRow label="Stories">{stories.length}</DetailRow>
@@ -680,9 +683,12 @@ export function CreateEpic({ nav, initiativeId }: { nav: Nav; initiativeId?: str
   }
 
   return (
-    <WorkspaceShell title="Create Epic" subtitle="Epics are PM-owned deliverable units of an initiative, broken into stories for engineering and QA." actions={<Btn small onClick={() => nav('initiative-detail', initiativeId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Create Epic" subtitle="Epics are PM-owned deliverable units of an initiative, broken into stories for engineering and QA.">
       <div className="max-w-2xl">
-        <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: initiativeId ? getInitiative(initiativeId).title : 'Initiative', screen: 'initiative-detail' }, { label: 'New Epic' }]} onNavigate={s => nav(s, initiativeId)} />
+        {/* Mirrors chosenInitiativeId (the dropdown below), not the initiativeId prop alone — entered
+            without a pre-selected initiative, the dropdown already defaults to a real one, and the
+            breadcrumb used to still show the literal word "Initiative" instead of matching it. */}
+        <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: getInitiative(chosenInitiativeId).title, screen: 'initiative-detail' }, { label: 'New Epic' }]} onNavigate={s => nav(s, chosenInitiativeId)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
             <Field label="Epic Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Onboarding Checklist" className={inputCls} /></Field>
@@ -746,8 +752,8 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
   const tabs = role === 'pm'
     ? [{ id: 'overview', label: 'Overview' }, { id: 'engineering', label: 'Engineering', count: tasks.length }, { id: 'qa', label: 'QA', count: testCases.length + bugs.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
     : role === 'engineering'
-      ? [{ id: 'overview', label: 'Requirement' }, { id: 'tasks', label: 'Tasks', count: tasks.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
-      : [{ id: 'overview', label: 'Requirement' }, { id: 'validation', label: 'Validation', count: testCases.length + bugs.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
+      ? [{ id: 'overview', label: 'Overview' }, { id: 'tasks', label: 'Tasks', count: tasks.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
+      : [{ id: 'overview', label: 'Overview' }, { id: 'validation', label: 'Validation', count: testCases.length + bugs.length }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: story.comments.length }]
 
   return (
     <WorkspaceShell
@@ -771,7 +777,7 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_250px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_250px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>{role === 'pm' ? 'Description' : 'What this story requires'}</SectionLabel>
@@ -794,8 +800,8 @@ export function StoryDetail({ id, nav, role }: { id: string; nav: Nav; role: Rol
             </div>
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
-                {role === 'pm' && <DetailRow label="Initiative"><button onClick={() => nav('initiative-detail', init.id)} className="hover:underline">{init.title}</button></DetailRow>}
-                {role === 'pm' && <DetailRow label="Epic"><button onClick={() => nav('epic-detail', epic.id)} className="hover:underline">{epic.title}</button></DetailRow>}
+                {role === 'pm' && <DetailRow label="Initiative"><button onClick={() => nav('initiative-detail', init.id)} className="text-[#4F46E5] font-medium hover:underline">{init.title}</button></DetailRow>}
+                {role === 'pm' && <DetailRow label="Epic"><button onClick={() => nav('epic-detail', epic.id)} className="text-[#4F46E5] font-medium hover:underline">{epic.title}</button></DetailRow>}
                 <DetailRow label="Assignee">{story.assignee}</DetailRow>
                 <DetailRow label="Points">{story.points} pts</DetailRow>
                 <DetailRow label="Cycle">{cycle ? cycle.name : story.targetDate ? `Target: ${story.targetDate}` : 'Unscheduled'}</DetailRow>
@@ -954,7 +960,7 @@ export function CreateStory({ nav, epicId, role }: { nav: Nav; epicId?: string; 
   }
 
   return (
-    <WorkspaceShell title="Create Story" subtitle={role === 'engineering' ? 'Engineering can create and split stories directly during execution.' : 'Stories are the deliverable unit engineering estimates and builds against.'} actions={<Btn small onClick={() => nav(role === 'engineering' ? 'story-list' : 'epic-detail', epicId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Create Story" subtitle={role === 'engineering' ? 'Engineering can create and split stories directly during execution.' : 'Stories are the deliverable unit engineering estimates and builds against.'}>
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
@@ -1009,7 +1015,7 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
       actions={isEngineering ? <><Btn small>Start Branch</Btn><Btn small>Link PR</Btn><Btn variant="primary" small onClick={() => markTaskDone(task.id)}>Mark Done</Btn></> : <Btn small variant="outline">Comment</Btn>}
     >
       <TabBar tabs={[
-        { id: 'overview', label: 'Detail' },
+        { id: 'overview', label: 'Overview' },
         { id: 'subtasks', label: 'Subtasks', count: subtasks.length },
         { id: 'activity', label: 'Activity' },
         { id: 'comments', label: 'Comments', count: task.comments.length },
@@ -1017,7 +1023,7 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_240px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Description</SectionLabel>
@@ -1077,13 +1083,13 @@ export function TaskDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
                 {isEngineering && <Btn small onClick={() => nav('create-subtask', task.id)}>+ Add Subtask</Btn>}
               </div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex-1"><ProgressBar pct={taskPct(task)} /></div>
+                <div className="flex-1"><ProgressBar pct={taskPct(task)} health={taskHealth(task)} /></div>
                 <span className="text-[11px] text-[#888]">{subtasks.filter(s => s.done).length}/{subtasks.length} done</span>
               </div>
               {subtasks.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic">No subtasks yet.</p>}
               {subtasks.map(st => (
                 <div key={st.id} className="flex items-center gap-3 py-2.5 border-b border-[#F5F5F5] last:border-0">
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${st.done ? 'bg-[#888] border-[#888]' : 'border-[#CCCCCC]'}`}>{st.done && <span className="text-white text-[9px]">✓</span>}</div>
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${st.done ? 'bg-[#4F46E5] border-[#4F46E5]' : 'border-[#CCCCCC]'}`}>{st.done && <span className="text-white text-[9px]">✓</span>}</div>
                   <span className={`text-[12.5px] ${st.done ? 'text-[#AAAAAA] line-through' : 'text-[#333]'}`}>{st.title}</span>
                   {st.assignee && <span className="text-[10px] text-[#BBBBBB] ml-auto">{st.assignee}</span>}
                 </div>
@@ -1120,7 +1126,7 @@ export function CreateTask({ nav, storyId }: { nav: Nav; storyId?: string }) {
   }
 
   return (
-    <WorkspaceShell title="Create Task" subtitle="Engineering splits stories into tasks to plan execution." actions={<Btn small onClick={() => nav('story-detail', storyId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Create Task" subtitle="Engineering splits stories into tasks to plan execution.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
@@ -1155,7 +1161,7 @@ export function CreateSubtask({ nav, taskId }: { nav: Nav; taskId?: string }) {
   }
 
   return (
-    <WorkspaceShell title="Add Subtask" subtitle={`Breaking down ${task?.title ?? 'a task'} into a smaller checklist item.`} actions={<Btn small onClick={() => nav('task-detail', taskId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Add Subtask" subtitle={`Breaking down ${task?.title ?? 'a task'} into a smaller checklist item.`}>
       <div className="max-w-2xl">
         <Breadcrumb items={[{ label: 'Story', screen: 'story-detail' }, { label: task?.title ?? 'Task', screen: 'task-detail' }, { label: 'New Subtask' }]} onNavigate={s => nav(s, s === 'story-detail' ? task?.storyId : task?.id)} />
         <CardShell className="p-6">
@@ -1205,11 +1211,11 @@ export function BugDetail({ id, nav, role }: { id: string; nav: Nav; role: Role 
       }
       actions={actions}
     >
-      <TabBar tabs={[{ id: 'overview', label: 'Detail' }, { id: 'repro', label: 'Repro Steps' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Discussion', count: bug.comments.length }]} active={tab} onSelect={setTab} />
+      <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'repro', label: 'Repro Steps' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: bug.comments.length }]} active={tab} onSelect={setTab} />
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_240px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               {(init || epic || story) && (
                 <CardShell className="p-4">
@@ -1266,7 +1272,7 @@ export function BugDetail({ id, nav, role }: { id: string; nav: Nav; role: Role 
               <SectionLabel>Reproduction Steps</SectionLabel>
               {bug.reproSteps.map((step, i) => (
                 <div key={i} className="flex items-start gap-3 py-3 border-b border-[#F5F5F5] last:border-0">
-                  <span className="w-5 h-5 bg-[#1A1A1A] text-white text-[10px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                  <span className="w-5 h-5 bg-[#4F46E5] text-white text-[10px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                   <p className="text-[13px] text-[#333] leading-relaxed">{step}</p>
                 </div>
               ))}
@@ -1302,7 +1308,7 @@ export function CreateBug({ nav, storyId }: { nav: Nav; storyId?: string }) {
   }
 
   return (
-    <WorkspaceShell title="Log Bug" subtitle="Logging a bug automatically opens a Bug Fix task for the assigned engineer." actions={<Btn small onClick={() => nav(storyId ? 'story-detail' : 'bug-list', storyId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Log Bug" subtitle="Logging a bug automatically opens a Bug Fix task for the assigned engineer.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
@@ -1311,8 +1317,8 @@ export function CreateBug({ nav, storyId }: { nav: Nav; storyId?: string }) {
               <Field label="Story" required><select className={selectCls} value={chosenStoryId} onChange={e => setChosenStoryId(e.target.value)}><option value="">— Not linked</option>{STORIES.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></Field>
               <Field label="Severity" required><select value={severity} onChange={e => setSeverity(e.target.value as Priority)} className={selectCls}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></Field>
             </div>
-            <Field label="Expected Result" required><textarea rows={2} value={expectedResult} onChange={e => setExpectedResult(e.target.value)} className={textareaCls} /></Field>
-            <Field label="Actual Result" required><textarea rows={2} value={actualResult} onChange={e => setActualResult(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Expected Result" required hint="What should happen?"><textarea rows={2} value={expectedResult} onChange={e => setExpectedResult(e.target.value)} className={textareaCls} /></Field>
+            <Field label="Actual Result" required hint="What happens instead?"><textarea rows={2} value={actualResult} onChange={e => setActualResult(e.target.value)} className={textareaCls} /></Field>
             <Field label="Reproduction Steps" required><textarea rows={4} value={reproSteps} onChange={e => setReproSteps(e.target.value)} placeholder={'1. Step one\n2. Step two'} className={textareaCls + ' font-mono'} /></Field>
             <Field label="Environment"><input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="e.g. iOS 17.5, iPhone 15 Pro" className={inputCls} /></Field>
             <div className="flex items-center gap-3 pt-1">
@@ -1349,12 +1355,12 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
           </div>
         </div>
       }
-      actions={role === 'qa' ? <><Btn small>Generate Edge Cases</Btn><Btn small onClick={() => nav('create-bug', story.id)}>Log Bug</Btn><Btn variant="primary" small onClick={() => setTestCaseStatus(tc.id, 'Passed')}>Mark Passed</Btn></> : undefined}
+      actions={role === 'qa' ? <><Btn small>Generate Edge Cases</Btn><Btn small onClick={() => nav('create-bug', story.id)}>Log Bug</Btn></> : undefined}
     >
-      <TabBar tabs={[{ id: 'overview', label: 'Steps' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: tc.comments.length }]} active={tab} onSelect={setTab} />
+      <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: tc.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_240px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Context</SectionLabel>
@@ -1371,7 +1377,7 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
                   return (
                     <div key={i} className={`px-4 py-3 border-b border-[#F5F5F5] last:border-0 grid grid-cols-[2fr_2fr_2fr] gap-4 items-start ${!passed && hasActual ? 'bg-[#FDF8F8]' : ''}`}>
                       <div className="flex items-start gap-2">
-                        <span className="w-5 h-5 bg-[#1A1A1A] text-white text-[9px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                        <span className="w-5 h-5 bg-[#4F46E5] text-white text-[9px] font-bold rounded flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                         <p className="text-[12px] text-[#333] leading-relaxed">{step.step}</p>
                       </div>
                       <p className="text-[12px] text-[#666] leading-relaxed">{step.expected}</p>
@@ -1398,7 +1404,7 @@ export function TestCaseDetail({ id, nav, role }: { id: string; nav: Nav; role: 
                 <DetailRow label="Status">{tc.status}</DetailRow>
                 <DetailRow label="Assignee">{tc.assignee}</DetailRow>
                 <DetailRow label="Last Run">{tc.lastRun ?? 'Never'}</DetailRow>
-                <DetailRow label="Story"><button onClick={() => nav('story-detail', story.id)} className="hover:underline">{story.id.toUpperCase()}</button></DetailRow>
+                <DetailRow label="Story"><button onClick={() => nav('story-detail', story.id)} className="text-[#4F46E5] font-medium hover:underline">{story.id.toUpperCase()}</button></DetailRow>
                 <DetailRow label="Linked Bugs">{tc.linkedBugIds.length}</DetailRow>
               </CardShell>
               {role === 'qa' && (
@@ -1452,7 +1458,7 @@ export function CreateTestCase({ nav, storyId }: { nav: Nav; storyId?: string })
   }
 
   return (
-    <WorkspaceShell title="Create Test Case" subtitle="Test cases validate a story's acceptance criteria." actions={<Btn small onClick={() => nav(storyId ? 'story-detail' : 'testing-queue', storyId)}>Cancel</Btn>}>
+    <WorkspaceShell title="Create Test Case" subtitle="Test cases validate a story's acceptance criteria.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
@@ -1510,7 +1516,7 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
 
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_260px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Description</SectionLabel>
@@ -1520,7 +1526,13 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
             </div>
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
-                <div className="text-center py-3"><p className="text-[28px] font-bold text-[#1A1A1A]">{gatePct}%</p><ProgressBar pct={gatePct} /></div>
+                <SectionLabel>Progress</SectionLabel>
+                <div className="text-center py-3">
+                  <ProgressLabel pct={gatePct} health={releaseHealth(rel)} className="text-[28px] font-bold text-[#1A1A1A] block" />
+                  <p className="text-[11px] text-[#AAAAAA]">Gate completion</p>
+                </div>
+                <ProgressBar pct={gatePct} health={releaseHealth(rel)} />
+                <Divider className="my-3" />
                 <DetailRow label="Target Date">{rel.targetDate}</DetailRow>
                 <DetailRow label="Gates Passed">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</DetailRow>
               </CardShell>
@@ -1562,14 +1574,14 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
         {tab === 'gates' && (
           <div className="max-w-2xl">
             <CardShell className="p-4">
-              <div className="flex items-center gap-2 mb-3"><ProgressBar pct={gatePct} /><span className="text-[11px] text-[#888] flex-shrink-0">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</span></div>
+              <div className="flex items-center gap-2 mb-3"><ProgressBar pct={gatePct} health={releaseHealth(rel)} /><span className="text-[11px] text-[#888] flex-shrink-0">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</span></div>
               {rel.gateChecks.map((gate, i) => (
                 <div
                   key={i}
                   onClick={canGate ? () => toggleGateCheck(rel.id, i) : undefined}
                   className={`flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0 ${canGate ? 'cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4' : ''}`}
                 >
-                  <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#888]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
+                  <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#4F46E5]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
                   <div><p className={`text-[12px] ${gate.passed ? 'text-[#888] line-through' : 'text-[#333]'}`}>{gate.label}</p>{gate.note && <p className="text-[10px] text-[#CC4444] mt-0.5">⚠ {gate.note}</p>}</div>
                 </div>
               ))}
@@ -1605,7 +1617,7 @@ export function CreateRelease({ nav }: { nav: Nav }) {
   }
 
   return (
-    <WorkspaceShell title="New Release" subtitle="Group epics — and, for incremental ships, individual stories — into a gated release." actions={<Btn small onClick={() => nav('release-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="New Release" subtitle="Group epics — and, for incremental ships, individual stories — into a gated release.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
@@ -1682,13 +1694,19 @@ export function HotfixList({ nav, productId }: { nav: Nav; productId?: string })
             </CardShell>
           )
         })}
+        {/* A 1-2 row list otherwise sits atop a large stretch of empty canvas with nothing marking
+            it complete — easy to mistake for a page still loading. Only kicks in when the list is
+            short enough that the gap would actually read as dead space, not on a full page of rows. */}
+        {list.length > 0 && list.length <= 3 && (
+          <p className="text-center text-[10.5px] text-[#CCCCCC] pt-3">— that's every hotfix{productId ? ' for this product' : ''} —</p>
+        )}
       </div>
     </WorkspaceShell>
   )
 }
 
 export function HotfixDetail({ id, nav }: { id: string; nav: Nav }) {
-  const [tab, setTab] = useState<'overview' | 'activity'>('overview')
+  const [tab, setTab] = useState<'overview' | 'activity' | 'comments'>('overview')
   const hf = getHotfix(id) ?? HOTFIXES[0]
   const product = getProduct(hf.productId)
   return (
@@ -1704,10 +1722,10 @@ export function HotfixDetail({ id, nav }: { id: string; nav: Nav }) {
         </div>
       }
     >
-      <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }]} active={tab} onSelect={setTab} />
+      <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: hf.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
         {tab === 'overview' && (
-          <div className="grid grid-cols-[1fr_240px] gap-5 max-w-4xl">
+          <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-5 max-w-4xl">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Why it happened</SectionLabel>
@@ -1731,6 +1749,7 @@ export function HotfixDetail({ id, nav }: { id: string; nav: Nav }) {
           </div>
         )}
         {tab === 'activity' && <div className="max-w-2xl"><CardShell className="p-5"><ActivityTimeline items={hf.activity} /></CardShell></div>}
+        {tab === 'comments' && <div className="max-w-2xl"><CardShell className="p-5"><CommentThread comments={hf.comments} /></CardShell></div>}
       </div>
     </WorkspaceShell>
   )
@@ -1751,7 +1770,7 @@ export function CreateHotfix({ nav, productId }: { nav: Nav; productId?: string 
   }
 
   return (
-    <WorkspaceShell title="Log Hotfix" subtitle="For an unplanned production fix shipped outside the normal cycle — never tied to an initiative. Captured here so there's a record of why it happened and what changed." actions={<Btn small onClick={() => nav('hotfix-list')}>Cancel</Btn>}>
+    <WorkspaceShell title="Log Hotfix" subtitle="For an unplanned production fix shipped outside the normal cycle — never tied to an initiative. Captured here so there's a record of why it happened and what changed.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">

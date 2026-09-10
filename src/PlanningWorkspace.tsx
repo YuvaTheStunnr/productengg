@@ -48,8 +48,8 @@ export function PlanningWorkspace({ navigate, product }: { navigate: PlanNav; pr
       subtitle="Ideas, initiatives, requests and releases — each lifecycle on its own board, linked where the data already connects them"
       actions={supportsGantt ? (
         <div className="flex items-center border border-[#E0E0E0] rounded-md overflow-hidden">
-          <button onClick={() => setView('kanban')} className={`text-[11px] px-2.5 py-1 transition-colors ${activeView === 'kanban' ? 'bg-[#1A1A1A] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Kanban</button>
-          <button onClick={() => setView('gantt')} className={`text-[11px] px-2.5 py-1 transition-colors ${activeView === 'gantt' ? 'bg-[#1A1A1A] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Gantt</button>
+          <button onClick={() => setView('kanban')} className={`text-[11px] px-2.5 py-1 transition-colors ${activeView === 'kanban' ? 'bg-[#4F46E5] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Kanban</button>
+          <button onClick={() => setView('gantt')} className={`text-[11px] px-2.5 py-1 transition-colors ${activeView === 'gantt' ? 'bg-[#4F46E5] text-white' : 'text-[#666] hover:bg-[#F5F5F5]'}`}>Gantt</button>
         </div>
       ) : undefined}
       noPad
@@ -123,7 +123,7 @@ function InitiativeBoard({ navigate, initiatives }: { navigate: PlanNav; initiat
               <p className="text-[12px] font-medium text-[#1A1A1A] leading-snug">{init.title}</p>
               <HealthBadge health={initiativeHealth(init)} />
             </div>
-            <ProgressBar pct={initiativePct(init)} thin />
+            <ProgressBar pct={initiativePct(init)} thin health={initiativeHealth(init)} />
             <div className="flex items-center justify-between mt-2 text-[10px] text-[#BBBBBB]">
               <span>Target: {init.targetDate}</span>
               {linked.length > 0 && <span>{linked.length} request{linked.length > 1 ? 's' : ''}</span>}
@@ -201,7 +201,7 @@ function ReleasesBoard({ navigate }: { navigate: PlanNav }) {
               <p className="text-[12px] font-medium text-[#1A1A1A] leading-snug">{rel.name}</p>
               <HealthBadge health={releaseHealth(rel)} />
             </div>
-            <ProgressBar pct={releasePct(rel)} thin />
+            <ProgressBar pct={releasePct(rel)} thin health={releaseHealth(rel)} />
             <div className="flex items-center justify-between mt-2 text-[10px] text-[#BBBBBB]">
               <span>Target: {rel.targetDate}</span>
               <span>{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} gates</span>

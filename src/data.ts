@@ -215,10 +215,13 @@ export interface WorkflowTask {
 
 // ─── Seed: Products & Teams ────────────────────────────────────────────────────
 
+// Product color swatches are their own wayfinding axis, separate from the
+// per-space identity hues (App.tsx SPACES) and the health/severity
+// vocabulary — picked to be visually distinct from both.
 export const PRODUCTS: Product[] = [
-  { id: 'prod-dxone', name: 'DXOne', description: 'Core consumer mobile app.', color: 'bg-[#1A1A1A]' },
-  { id: 'prod-stunnr', name: 'Stunnr', description: 'Creator-facing companion app.', color: 'bg-[#555555]' },
-  { id: 'prod-reporting', name: 'Reporting', description: 'Internal analytics & reporting suite.', color: 'bg-[#888888]' },
+  { id: 'prod-dxone', name: 'DXOne', description: 'Core consumer mobile app.', color: 'bg-[#0891B2]' },
+  { id: 'prod-stunnr', name: 'Stunnr', description: 'Creator-facing companion app.', color: 'bg-[#DB2777]' },
+  { id: 'prod-reporting', name: 'Reporting', description: 'Internal analytics & reporting suite.', color: 'bg-[#C026D3]' },
 ]
 
 export const TEAMS: Team[] = [
@@ -941,6 +944,21 @@ export const ideasForInitiative = (init: Initiative) => IDEAS.filter(i => i.init
 export const requestsForInitiative = (init: Initiative) => CUSTOMER_REQUESTS.filter(r => r.initiativeIds.includes(init.id))
 export const initiativesForRequest = (req: CustomerRequest) => req.initiativeIds.map(id => getInitiative(id))
 export const requestsForAccount = (accountId: string) => CUSTOMER_REQUESTS.filter(r => r.accountId === accountId)
+
+// ─── Product scoping for Customer Success ──────────────────────────────────
+// CS has no direct product field on CustomerRequest or Account — a request
+// only touches a product indirectly, through whichever Initiative(s) it's
+// linked to. So "requests for product X" means "requests linked to at least
+// one initiative that touches product X." An unlinked request (the common
+// early-lifecycle case — see the comment on CustomerRequest) never has a
+// product to attribute it to, so it only ever appears under 'all', the same
+// way PM's own product-scoped lists already work.
+export const requestsForProduct = (productId: string | 'all') =>
+  productId === 'all' ? CUSTOMER_REQUESTS : CUSTOMER_REQUESTS.filter(r => initiativesForRequest(r).some(i => i.productIds.includes(productId)))
+// An account is "for" a product if any of its requests are — same
+// indirection, one level further out.
+export const accountsForProduct = (productId: string | 'all') =>
+  productId === 'all' ? ACCOUNTS : ACCOUNTS.filter(a => requestsForProduct(productId).some(r => r.accountId === a.id))
 
 export function taskPct(task: Task): number {
   const subs = subtasksForTask(task.id)
