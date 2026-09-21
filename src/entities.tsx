@@ -17,18 +17,24 @@ import {
   epicsForInitiative, storiesForEpic, tasksForStory, subtasksForTask, bugsForStory, testCasesForStory,
   ideasForInitiative, requestsForInitiative, initiativesForRequest, workflowTasksForSource,
   initiativeHealth, initiativePct, epicHealth, epicPct, storyHealth, storyPct, taskHealth, taskPct, releaseHealth, releasePct,
+  initiativeTargetLabel, initiativeStageLabel, milestonesForInitiative, addMilestoneToStory, toggleMilestoneDone, addRiskToInitiative, removeRiskFromInitiative, updateInitiativeDetails,
+  updateInitiativePriority, addRequirementToInitiative, removeRequirementFromInitiative,
+  approveInitiative, rejectInitiative, startInitiativeWork, moveInitiativeToTesting, releaseInitiative, pauseInitiative, resumeInitiative,
+  addToRelease, removeFromRelease, addRequirementToRelease, removeRequirementFromRelease,
   customerFacingInitiativeUpdate, customerFacingReleaseStatus, requestStageNarrative,
   createIdea, createCustomerRequest, createInitiative, createEpic, createStory, createTask, createSubtask, createBug, createTestCase, createRelease, createHotfix,
+  rejectIdea,
   moveCustomerRequestStage, setRequestInitiatives, planStoryIntoCycle, moveStoryToQA, approveStory, rejectStory, requestStoryClarification, raiseStoryBlocker,
   markTaskDone, setTaskWorkflowState, markBugInFix, markBugFixed, markBugVerified, closeBugAsDuplicate, requestBugFix, setTestCaseStatus, updateNotes,
   acknowledgeWorkflowTask, completeWorkflowTask, toggleGateCheck, approveRelease,
-  type Idea, type CustomerRequest, type RequestStatus, type Priority,
+  type Idea, type CustomerRequest, type RequestStatus, type Priority, type WorkflowState, type Release,
 } from './data'
 import {
   WorkflowBadge, HealthBadge, StatusPair, SeverityBadge, CardShell, SectionLabel, ProgressBar, ProgressLabel, Breadcrumb, WorkspaceShell,
-  Btn, Divider, Tag, CommentThread, TabBar, DetailRow, AttachmentList, ActivityTimeline, RelationshipRow, WorkflowQueue, EmptyState,
-  RequestStageBadge,
+  Btn, Divider, Tag, CommentThread, TabBar, DetailRow, AttachmentList, ActivityTimeline, RelationshipRow, WorkflowQueue, EmptyState, Modal,
+  RequestStageBadge, ProductMultiSelect,
 } from './ui'
+import { ConversionPicker } from './ConversionPicker'
 
 export type Nav = (screen: string, id?: string) => void
 export type Role = 'leadership' | 'pm' | 'engineering' | 'qa' | 'customer-success'
@@ -47,20 +53,6 @@ export function Field({ label, required, children, hint }: { label: string; requ
       </label>
       {children}
       {hint && <p className="text-[10px] text-[#BBBBBB] mt-1">{hint}</p>}
-    </div>
-  )
-}
-
-function ProductCheckboxes({ selected, onToggle }: { selected: string[]; onToggle: (id: string) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      {PRODUCTS.map(p => (
-        <label key={p.id} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
-          <input type="checkbox" checked={selected.includes(p.id)} onChange={() => onToggle(p.id)} className="accent-[#1A1A1A]" />
-          <div className={`w-2.5 h-2.5 rounded-sm flex-shrink-0 ${p.color}`} />
-          <span className="text-[12.5px] text-[#333]">{p.name}</span>
-        </label>
-      ))}
     </div>
   )
 }
@@ -130,21 +122,25 @@ function ProductPills({ productIds }: { productIds: string[] }) {
 
 export function IdeaDetail({ id, nav, role }: { id: string; nav: Nav; role: Role }) {
   const [tab, setTab] = useState<'overview' | 'activity' | 'comments'>('overview')
+  const [converting, setConverting] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
   const idea = getIdea(id) ?? IDEAS[0]
   const canDecide = role === 'leadership' || role === 'pm'
+  const backScreen = role === 'leadership' ? 'backlog' : 'idea-list'
+  const backLabel = role === 'leadership' ? 'Backlog' : 'Ideas'
 
   return (
     <WorkspaceShell
       title={
         <div>
-          <Breadcrumb items={[{ label: 'Ideas', screen: 'idea-list' }, { label: idea.title }]} onNavigate={s => nav(s)} />
+          <Breadcrumb items={[{ label: backLabel, screen: backScreen }, { label: idea.title }]} onNavigate={s => nav(s)} />
           <div className="flex items-center gap-3">
             <h1 className="text-[15px] font-semibold text-[#1A1A1A]">{idea.title}</h1>
             <Tag label={idea.status} variant={idea.status === 'Converted' ? 'dark' : idea.status === 'Rejected' ? 'outline' : 'default'} />
           </div>
         </div>
       }
-      actions={canDecide && idea.status === 'Idea' ? <><Btn small variant="outline">Reject</Btn><Btn small variant="primary" onClick={() => nav('create-initiative')}>Convert to Initiative</Btn></> : undefined}
+      actions={canDecide && idea.status === 'Idea' ? <><Btn small variant="outline" onClick={() => setRejecting(true)}>Reject</Btn><Btn small variant="primary" onClick={() => setConverting(true)}>Convert</Btn></> : undefined}
     >
       <TabBar tabs={[{ id: 'overview', label: 'Overview' }, { id: 'activity', label: 'Activity' }, { id: 'comments', label: 'Comments', count: idea.comments.length }]} active={tab} onSelect={setTab} />
       <div className="px-6 py-5">
@@ -175,8 +171,11 @@ export function IdeaDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
                 <DetailRow label="Status"><Tag label={idea.status} variant="muted" /></DetailRow>
               </CardShell>
               <CardShell className="p-4">
-                <SectionLabel>Relationships</SectionLabel>
-                <RelationshipRow label="Initiative" value={idea.initiativeId ? getInitiative(idea.initiativeId).title : '—'} onClick={idea.initiativeId ? () => nav('initiative-detail', idea.initiativeId) : undefined} />
+                <SectionLabel>Converted To</SectionLabel>
+                {idea.convertedTo ? (
+                  <RelationshipRow label={idea.convertedTo.level[0].toUpperCase() + idea.convertedTo.level.slice(1)} value={idea.convertedTo.label}
+                    onClick={idea.convertedTo.level === 'initiative' ? () => nav('initiative-detail', idea.convertedTo!.id) : undefined} />
+                ) : <p className="text-[11.5px] text-[#CCCCCC] italic">Not converted yet.</p>}
               </CardShell>
             </div>
           </div>
@@ -184,7 +183,29 @@ export function IdeaDetail({ id, nav, role }: { id: string; nav: Nav; role: Role
         {tab === 'activity' && <div className="max-w-2xl"><CardShell className="p-5"><ActivityTimeline items={idea.activity} /></CardShell></div>}
         {tab === 'comments' && <div className="max-w-2xl"><CardShell className="p-5"><CommentThread comments={idea.comments} /></CardShell></div>}
       </div>
+      {converting && <ConversionPicker source={idea} kind="idea" onClose={() => setConverting(false)} />}
+      {rejecting && <RejectIdeaModal idea={idea} onClose={() => setRejecting(false)} />}
     </WorkspaceShell>
+  )
+}
+
+function RejectIdeaModal({ idea, onClose }: { idea: Idea; onClose: () => void }) {
+  const [reason, setReason] = useState('')
+  const submit = () => {
+    if (!reason.trim()) return
+    rejectIdea(idea.id, reason.trim())
+    onClose()
+  }
+  return (
+    <Modal title={`Reject "${idea.title}"`} onClose={onClose}>
+      <Field label="Reason" required hint="Shown on the idea so anyone revisiting it later knows why it didn't move forward.">
+        <textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} className={textareaCls} autoFocus />
+      </Field>
+      <div className="flex justify-end gap-2 mt-4">
+        <Btn onClick={onClose}>Cancel</Btn>
+        <Btn variant="primary" onClick={submit}>Reject Idea</Btn>
+      </div>
+    </Modal>
   )
 }
 
@@ -199,23 +220,36 @@ const roleDisplay: Record<Role, { name: string; label: string }> = {
 export function CreateIdea({ nav, role }: { nav: Nav; role: Role }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [intendedConversion, setIntendedConversion] = useState<'' | 'initiative' | 'epic' | 'story' | 'task'>('')
+  // Leadership has no 'idea-list' screen — Ideas live inside Backlog there.
+  const backScreen = role === 'leadership' ? 'backlog' : 'idea-list'
+  const backLabel = role === 'leadership' ? 'Backlog' : 'Ideas'
   const submit = () => {
     if (!title.trim() || !description.trim()) return
     const who = roleDisplay[role]
-    const idea = createIdea({ title, description, createdBy: who.name, createdByRole: who.label })
+    const idea = createIdea({ title, description, createdBy: who.name, createdByRole: who.label, intendedConversion: intendedConversion || undefined })
     nav('idea-detail', idea.id)
   }
   return (
     <WorkspaceShell title="New Idea" subtitle="Ideas are lightweight — capture the thought, decide on it later.">
       <div className="max-w-2xl">
-        <Breadcrumb items={[{ label: 'Ideas', screen: 'idea-list' }, { label: 'New Idea' }]} onNavigate={s => nav(s)} />
+        <Breadcrumb items={[{ label: backLabel, screen: backScreen }, { label: 'New Idea' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
             <Field label="Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Offline mode for mobile app" className={inputCls} /></Field>
             <Field label="Description" required><textarea rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="What's the idea? What problem does it solve?" className={textareaCls} /></Field>
+            <Field label="If Approved → Convert To" hint="Optional — a hint for whoever triages this. The Convert action can still pick something else when the time comes.">
+              <select value={intendedConversion} onChange={e => setIntendedConversion(e.target.value as typeof intendedConversion)} className={selectCls}>
+                <option value="">— Not decided yet —</option>
+                <option value="initiative">Initiative</option>
+                <option value="epic">Epic</option>
+                <option value="story">Story</option>
+                <option value="task">Task</option>
+              </select>
+            </Field>
             <div className="flex items-center gap-3 pt-1">
               <Btn variant="primary" onClick={submit}>{role === 'leadership' ? 'Save Idea' : 'Save & Notify Leadership'}</Btn>
-              <Btn variant="ghost" onClick={() => nav('idea-list')}>Cancel</Btn>
+              <Btn variant="ghost" onClick={() => nav(backScreen)}>Cancel</Btn>
             </div>
           </div>
         </CardShell>
@@ -379,69 +413,133 @@ export function CreateCustomerRequest({ nav }: { nav: Nav }) {
 // INITIATIVES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// One scrolling page, not a tab bar — the tabs used to split Overview /
+// Epics / Activity / Comments, but Epics belongs on the same page as the
+// goal it serves, and a global Activity/Comments feed with no scope ("what
+// is this a comment ON?") is exactly the kind of thing that "exists without
+// a point." Comments and Activity now live per-Epic (see EpicDetail) —
+// nothing global is lost, since every Epic already had its own.
+const INITIATIVE_TABS = [{ id: 'overview' as const, label: 'Overview' }, { id: 'epics' as const, label: 'Epics' }]
+type InitiativeTab = typeof INITIATIVE_TABS[number]['id']
+
 export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role: Role }) {
-  const [tab, setTab] = useState<'overview' | 'epics' | 'activity' | 'comments'>('overview')
   const init = getInitiative(id) ?? INITIATIVES[0]
   const epics = epicsForInitiative(init.id)
   const ideas = ideasForInitiative(init)
   const requests = requestsForInitiative(init)
+  const milestoneRows = milestonesForInitiative(init)
   const isPM = role === 'pm'
+  const isLeadership = role === 'leadership'
+  const [tab, setTab] = useState<InitiativeTab>('overview')
+  const [editing, setEditing] = useState(false)
+  const [addingRisk, setAddingRisk] = useState(false)
+  const [addingRequirement, setAddingRequirement] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [pausing, setPausing] = useState(false)
+
+  const author = isLeadership ? 'Jamie Okonkwo' : init.pm
+
+  // A Planning-stage initiative hasn't been picked up yet, so it still lives
+  // in Backlog and that's where "back" should go; anything Approved or
+  // later has moved onto the Ongoing board.
+  const backScreen = isLeadership ? (init.workflowState === 'Draft' || init.workflowState === 'Planning' ? 'backlog' : 'ongoing') : 'initiative-list'
+  const backLabel = isLeadership ? (backScreen === 'backlog' ? 'Backlog' : 'Ongoing') : 'Initiatives'
 
   return (
     <WorkspaceShell
       title={
         <div>
-          <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: init.title }]} onNavigate={s => nav(s)} />
+          <Breadcrumb items={[{ label: backLabel, screen: backScreen }, { label: init.title }]} onNavigate={s => nav(s)} />
           <div className="flex items-center gap-3">
             <h1 className="text-[15px] font-semibold text-[#1A1A1A]">{init.title}</h1>
             <StatusPair workflow={init.workflowState} health={initiativeHealth(init)} />
+            {init.priority && <SeverityBadge severity={init.priority} />}
           </div>
         </div>
       }
-      actions={isPM ? <><Btn small onClick={() => nav('create-epic', init.id)}>+ Epic</Btn><Btn small>Edit</Btn><Btn variant="primary" small onClick={() => nav('create-release')}>Plan Release</Btn></> : <><Btn small>Edit</Btn><Btn variant="primary" small>Share Update</Btn></>}
+      actions={
+        <>
+          {tab === 'epics' && isPM && <Btn small onClick={() => nav('create-epic', init.id)}>+ Epic</Btn>}
+          <InitiativeWorkflowActions init={init} isPM={isPM} isLeadership={isLeadership} author={author}
+            onReject={() => setRejecting(true)} onPause={() => setPausing(true)} />
+          <Btn small onClick={() => setEditing(true)}>Edit</Btn>
+          {isPM && <Btn variant="primary" small onClick={() => nav('create-release')}>Plan Release</Btn>}
+        </>
+      }
     >
-      <TabBar tabs={[
-        { id: 'overview', label: 'Overview' },
-        { id: 'epics', label: 'Epics', count: epics.length },
-        { id: 'activity', label: 'Activity' },
-        { id: 'comments', label: 'Comments', count: init.comments.length },
-      ]} active={tab} onSelect={setTab} />
+      <TabBar tabs={INITIATIVE_TABS} active={tab} onSelect={setTab} />
 
-      <div className="px-6 py-5">
-        {tab === 'overview' && (
-          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5 max-w-5xl">
+      {tab === 'overview' && (
+        <div className="px-6 py-5 max-w-6xl flex flex-col gap-5">
+          <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5">
             <div className="flex flex-col gap-4">
               <CardShell className="p-4">
                 <SectionLabel>Business Goal</SectionLabel>
                 <p className="text-[13px] text-[#333] leading-relaxed">{init.goal}</p>
                 <p className="text-[12px] text-[#666] leading-relaxed mt-2">{init.description}</p>
               </CardShell>
+
               <CardShell className="p-4">
                 <SectionLabel>Milestones</SectionLabel>
+                <p className="text-[10.5px] text-[#BBBBBB] -mt-1 mb-2">Something reached, not necessarily released — added on the story that reached it.</p>
                 <div className="relative">
                   <div className="absolute left-3 top-2 bottom-2 w-px bg-[#EBEBEB]" />
-                  {init.milestones.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No milestones set yet.</p>}
-                  {init.milestones.map((m, i) => (
-                    <div key={i} className="flex items-center gap-4 py-2.5 pl-8 relative">
-                      <div className={`absolute left-2 w-3 h-3 rounded-full border-2 -translate-x-1/2 ${m.done ? 'bg-[#4F46E5] border-[#4F46E5]' : 'bg-white border-[#CCCCCC]'}`} />
-                      <span className="text-[12px] text-[#333]">{m.label}</span>
-                      <span className="text-[10px] text-[#BBBBBB] ml-auto">{m.date}</span>
-                      {m.done && <Tag label="Done" variant="muted" />}
+                  {milestoneRows.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No milestones reached yet — add one from a story below.</p>}
+                  {milestoneRows.map(({ milestone: m, story, epic }) => (
+                    <div key={m.id} className="flex items-center gap-4 py-2.5 pl-8 relative">
+                      <button onClick={() => toggleMilestoneDone(story.id, m.id)}
+                        className={`absolute left-2 w-3 h-3 rounded-full border-2 -translate-x-1/2 ${m.done ? 'bg-[#4F46E5] border-[#4F46E5]' : 'bg-white border-[#CCCCCC]'}`} />
+                      <div className="min-w-0">
+                        <span className="text-[12px] text-[#333]">{m.label}</span>
+                        <p className="text-[10px] text-[#BBBBBB] truncate">{epic.title} → {story.title} · added by {m.addedBy}</p>
+                      </div>
+                      <span className="text-[10px] text-[#BBBBBB] ml-auto flex-shrink-0">{m.date}</span>
+                      {m.done && <Tag label="Reached" variant="muted" />}
                     </div>
                   ))}
                 </div>
               </CardShell>
-              {init.risks.length > 0 && (
-                <CardShell className="p-4">
+
+              <CardShell className="p-4">
+                <div className="flex items-center justify-between mb-1">
                   <SectionLabel>Risks</SectionLabel>
-                  {init.risks.map((r, i) => (
-                    <div key={i} className="flex items-start justify-between gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
+                  {(isPM || isLeadership) && <button onClick={() => setAddingRisk(v => !v)} className="text-[11px] text-[#4F46E5] hover:underline">+ Add Risk</button>}
+                </div>
+                {addingRisk && <AddRiskForm initId={init.id} author={author} onDone={() => setAddingRisk(false)} />}
+                {init.risks.length === 0 && !addingRisk && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No risks flagged.</p>}
+                {init.risks.map((r, i) => (
+                  <div key={i} className="flex items-start justify-between gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
+                    <div className="min-w-0">
                       <p className="text-[11.5px] text-[#444] leading-snug">{r.text}</p>
-                      <span className="flex-shrink-0"><SeverityBadge severity={r.severity} /></span>
+                      {r.author && <p className="text-[10px] text-[#BBBBBB] mt-0.5">flagged by {r.author}{r.createdAt ? ` · ${r.createdAt}` : ''}</p>}
                     </div>
-                  ))}
-                </CardShell>
-              )}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <SeverityBadge severity={r.severity} />
+                      {(isPM || isLeadership) && <button onClick={() => removeRiskFromInitiative(init.id, i)} className="text-[10px] text-[#BBBBBB] hover:text-[#CC4444]">Resolve</button>}
+                    </div>
+                  </div>
+                ))}
+              </CardShell>
+
+              <CardShell className="p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <SectionLabel>Requirements</SectionLabel>
+                  {(isPM || isLeadership) && <button onClick={() => setAddingRequirement(v => !v)} className="text-[11px] text-[#4F46E5] hover:underline">+ Add Requirement</button>}
+                </div>
+                <p className="text-[10.5px] text-[#BBBBBB] -mt-1 mb-2">What has to be true before any release shipping this initiative's work can go out — rolls onto that release automatically and is enforced before it can be marked Released.</p>
+                {addingRequirement && <AddRequirementForm initId={init.id} author={author} onDone={() => setAddingRequirement(false)} />}
+                {(!init.requirements || init.requirements.length === 0) && !addingRequirement && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No requirements set.</p>}
+                {(init.requirements ?? []).map(r => (
+                  <div key={r.id} className="flex items-start justify-between gap-2 py-2 border-b border-[#F5F5F5] last:border-0">
+                    <div className="min-w-0">
+                      <p className="text-[11.5px] text-[#444] leading-snug">{r.label}</p>
+                      <p className="text-[10px] text-[#BBBBBB] mt-0.5">added by {r.addedBy} · {r.addedAt}</p>
+                    </div>
+                    {(isPM || isLeadership) && <button onClick={() => removeRequirementFromInitiative(init.id, r.id)} className="text-[10px] text-[#BBBBBB] hover:text-[#CC4444] flex-shrink-0">Remove</button>}
+                  </div>
+                ))}
+              </CardShell>
+
               <CardShell className="p-4">
                 <SectionLabel>Attachments</SectionLabel>
                 <AttachmentList attachments={init.attachments} />
@@ -466,12 +564,13 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
                 <DetailRow label="Eng Lead">{init.engLead}</DetailRow>
                 <DetailRow label="QA Lead">{init.qaLead}</DetailRow>
                 <DetailRow label="Start Date">{init.startDate ?? '—'}</DetailRow>
-                <DetailRow label="Target Date">{init.targetDate}</DetailRow>
+                <DetailRow label="Target Date">{initiativeTargetLabel(init)}</DetailRow>
+                <DetailRow label="Priority">{init.priority ?? '—'}</DetailRow>
               </CardShell>
               {(ideas.length > 0 || requests.length > 0) && (
                 <CardShell className="p-4">
                   <SectionLabel>Originated From</SectionLabel>
-                  {ideas.map(i => <RelationshipRow key={i.id} label="Idea" value={i.title} onClick={isPM || role === 'leadership' ? () => nav('idea-detail', i.id) : undefined} />)}
+                  {ideas.map(i => <RelationshipRow key={i.id} label="Idea" value={i.title} onClick={isPM || isLeadership ? () => nav('idea-detail', i.id) : undefined} />)}
                   {/* Customer Requests live in Customer Success now — shown here as read-only
                       context (with stage) rather than a link, since PM/Leadership can't open
                       a request-detail screen that no longer exists in their spaces. */}
@@ -480,36 +579,260 @@ export function InitiativeDetail({ id, nav, role }: { id: string; nav: Nav; role
               )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {tab === 'epics' && (
-          <div className="max-w-4xl flex flex-col gap-3">
-            {epics.length === 0 && <EmptyState icon="◇" title="No epics yet" sub={isPM ? 'Break this initiative into epics to start planning delivery.' : undefined} />}
-            {epics.map(epic => {
-              const stories = storiesForEpic(epic.id)
-              return (
-                <CardShell key={epic.id} onClick={isPM ? () => nav('epic-detail', epic.id) : undefined}>
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-[13px] font-medium text-[#1A1A1A] truncate">{epic.title}</span>
-                      <StatusPair workflow={epic.workflowState} health={epicHealth(epic)} />
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-[11px] text-[#888]">{stories.length} stories</span>
-                      <div className="w-20"><ProgressBar pct={epicPct(epic)} health={epicHealth(epic)} /></div>
-                      <ProgressLabel pct={epicPct(epic)} health={epicHealth(epic)} className="text-[11px] text-[#888] w-8 text-right block" />
-                    </div>
-                  </div>
-                </CardShell>
-              )
-            })}
+      {tab === 'epics' && (
+        <div className="px-6 py-5 max-w-6xl flex flex-col gap-5">
+          <div className="flex items-center justify-between">
+            <SectionLabel>Epics</SectionLabel>
+            <span className="text-[10px] text-[#BBBBBB]">{epics.length} epic{epics.length === 1 ? '' : 's'} · expand one to see its stories</span>
           </div>
-        )}
+          {epics.length === 0 && <EmptyState icon="◇" title="No epics yet" sub={isPM ? 'Break this initiative into epics to start planning delivery.' : undefined} />}
+          {epics.length > 0 && <EpicKanban epics={epics} canAddStory={isPM} nav={nav} />}
+        </div>
+      )}
 
-        {tab === 'activity' && <div className="max-w-2xl"><CardShell className="p-5"><ActivityTimeline items={init.activity} /></CardShell></div>}
-        {tab === 'comments' && <div className="max-w-2xl"><CardShell className="p-5"><CommentThread comments={init.comments} /></CardShell></div>}
-      </div>
+      {editing && (
+        <EditInitiativeModal init={init} onClose={() => setEditing(false)} />
+      )}
+      {rejecting && (
+        <ReasonModal title="Reject Initiative" label="Why is this being rejected?" onClose={() => setRejecting(false)}
+          onSubmit={reason => { rejectInitiative(init.id, reason, author); setRejecting(false) }} />
+      )}
+      {pausing && (
+        <ReasonModal title="Pause Initiative" label="Why is this being paused?" onClose={() => setPausing(false)}
+          onSubmit={reason => { pauseInitiative(init.id, reason, author); setPausing(false) }} />
+      )}
     </WorkspaceShell>
+  )
+}
+
+// Contextual to workflowState: Planning → Approve/Reject (Leadership sign-off);
+// Approved → Start Work; In Progress → Move to Testing; Testing → Mark
+// Released; Paused → Resume (back to wherever it was paused from). Pause is
+// offered from any active, non-terminal state. Nothing renders once a role
+// has no action to take in the current stage — no disabled buttons to puzzle
+// over.
+function InitiativeWorkflowActions({ init, isPM, isLeadership, author, onReject, onPause }: {
+  init: NonNullable<ReturnType<typeof getInitiative>>; isPM: boolean; isLeadership: boolean; author: string
+  onReject: () => void; onPause: () => void
+}) {
+  const ws = init.workflowState
+  if (isLeadership && ws === 'Planning') {
+    return <><Btn small variant="outline" onClick={onReject}>Reject</Btn><Btn small variant="primary" onClick={() => approveInitiative(init.id, author)}>Approve</Btn></>
+  }
+  if (isPM && ws === 'Approved') {
+    return <Btn small variant="primary" onClick={() => startInitiativeWork(init.id, author)}>Start Work</Btn>
+  }
+  if (isPM && ws === 'In Progress') {
+    return <><Btn small variant="outline" onClick={onPause}>Pause</Btn><Btn small variant="primary" onClick={() => moveInitiativeToTesting(init.id, author)}>Move to Testing</Btn></>
+  }
+  if (isPM && ws === 'Testing') {
+    return <><Btn small variant="outline" onClick={onPause}>Pause</Btn><Btn small variant="primary" onClick={() => releaseInitiative(init.id, author)}>Mark Released</Btn></>
+  }
+  if (isPM && ws === 'Paused') {
+    return <Btn small variant="primary" onClick={() => resumeInitiative(init.id, author)}>Resume</Btn>
+  }
+  return null
+}
+
+function ReasonModal({ title, label, onClose, onSubmit }: { title: string; label: string; onClose: () => void; onSubmit: (reason: string) => void }) {
+  const [reason, setReason] = useState('')
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label={label} required><textarea rows={3} value={reason} onChange={e => setReason(e.target.value)} className={textareaCls} /></Field>
+        <div className="flex justify-end gap-2">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={() => reason.trim() && onSubmit(reason.trim())}>Confirm</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function AddRiskForm({ initId, author, onDone }: { initId: string; author: string; onDone: () => void }) {
+  const [text, setText] = useState('')
+  const [severity, setSeverity] = useState<'High' | 'Medium' | 'Low'>('Medium')
+  const submit = () => {
+    if (!text.trim()) return
+    addRiskToInitiative(initId, text.trim(), severity, author)
+    onDone()
+  }
+  return (
+    <div className="flex flex-col gap-2 mb-3 p-3 bg-[#FAFAFA] rounded-md border border-[#F0F0F0]">
+      <textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder="What's the risk?" className={textareaCls} />
+      <div className="flex items-center gap-2">
+        <select value={severity} onChange={e => setSeverity(e.target.value as 'High' | 'Medium' | 'Low')} className={selectCls}>
+          <option>High</option><option>Medium</option><option>Low</option>
+        </select>
+        <Btn variant="primary" small onClick={submit}>Add</Btn>
+        <Btn small onClick={onDone}>Cancel</Btn>
+      </div>
+    </div>
+  )
+}
+
+function AddRequirementForm({ initId, author, onDone }: { initId: string; author: string; onDone: () => void }) {
+  const [label, setLabel] = useState('')
+  const submit = () => {
+    if (!label.trim()) return
+    addRequirementToInitiative(initId, label.trim(), author)
+    onDone()
+  }
+  return (
+    <div className="flex items-center gap-2 mb-3 p-3 bg-[#FAFAFA] rounded-md border border-[#F0F0F0]">
+      <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Legal review of payment flows" className={`${inputCls} flex-1`} onKeyDown={e => e.key === 'Enter' && submit()} />
+      <Btn variant="primary" small onClick={submit}>Add</Btn>
+      <Btn small onClick={onDone}>Cancel</Btn>
+    </div>
+  )
+}
+
+const PRIORITY_OPTIONS: Priority[] = ['Critical', 'High', 'Medium', 'Low']
+
+function EditInitiativeModal({ init, onClose }: { init: ReturnType<typeof getInitiative>; onClose: () => void }) {
+  if (!init) return null
+  const [goal, setGoal] = useState(init.goal)
+  const [description, setDescription] = useState(init.description)
+  const [targetDate, setTargetDate] = useState(init.targetDate ?? '')
+  const [ongoing, setOngoing] = useState(!!init.ongoing)
+  const [pm, setPm] = useState(init.pm)
+  const [engLead, setEngLead] = useState(init.engLead)
+  const [qaLead, setQaLead] = useState(init.qaLead)
+  const [priority, setPriority] = useState<Priority | ''>(init.priority ?? '')
+  const submit = () => {
+    updateInitiativeDetails(init.id, { goal, description, targetDate: ongoing ? undefined : (targetDate || undefined), ongoing, pm, engLead, qaLead })
+    if (priority) updateInitiativePriority(init.id, priority, pm || 'Alex Chen')
+    onClose()
+  }
+  return (
+    <Modal title={`Edit ${init.title}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-4">
+        <Field label="Business Goal" required><textarea rows={2} value={goal} onChange={e => setGoal(e.target.value)} className={textareaCls} /></Field>
+        <Field label="Additional Context"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className={textareaCls} /></Field>
+        <div className="grid grid-cols-2 gap-4 items-end">
+          <Field label="Target Date"><input type="date" disabled={ongoing} value={targetDate} onChange={e => setTargetDate(e.target.value)} className={`${inputCls} ${ongoing ? 'opacity-40' : ''}`} /></Field>
+          <label className="flex items-center gap-2 text-[12px] text-[#555] pb-2.5">
+            <input type="checkbox" checked={ongoing} onChange={e => setOngoing(e.target.checked)} /> No end date — ongoing
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Priority" hint="Separate from Epic/Story priority — this is the initiative's own standing.">
+            <select value={priority} onChange={e => setPriority(e.target.value as Priority | '')} className={selectCls}>
+              <option value="">— None —</option>
+              {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="PM Owner"><input value={pm} onChange={e => setPm(e.target.value)} className={inputCls} /></Field>
+          <Field label="Engineering Lead"><input value={engLead} onChange={e => setEngLead(e.target.value)} className={inputCls} /></Field>
+          <Field label="QA Lead"><input value={qaLead} onChange={e => setQaLead(e.target.value)} className={inputCls} /></Field>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-[#F0F0F0]">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={submit}>Save</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+const EPIC_STAGES: WorkflowState[] = ['Draft', 'Planning', 'In Progress', 'Testing', 'Released']
+
+function EpicKanban({ epics, canAddStory, nav }: { epics: ReturnType<typeof epicsForInitiative>; canAddStory: boolean; nav: Nav }) {
+  const [expanded, setExpanded] = useState<string | null>(epics[0]?.id ?? null)
+  return (
+    <div className="grid grid-cols-5 gap-3 items-start">
+      {EPIC_STAGES.map(stage => {
+        const col = epics.filter(e => e.workflowState === stage)
+        return (
+          <div key={stage} className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between px-0.5">
+              <span className="text-[11px] font-semibold text-[#555]">{stage}</span>
+              <span className="text-[10px] bg-[#EBEBEB] text-[#555] px-1.5 py-0.5 rounded-full">{col.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {col.map(epic => (
+                <EpicCard key={epic.id} epic={epic} expanded={expanded === epic.id}
+                  onToggle={() => setExpanded(v => v === epic.id ? null : epic.id)}
+                  canAddStory={canAddStory} nav={nav} />
+              ))}
+              {col.length === 0 && <div className="text-[10px] text-[#CCCCCC] italic py-4 text-center border border-dashed border-[#E4E4E4] rounded-md">Empty</div>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EpicCard({ epic, expanded, onToggle, canAddStory, nav }: { epic: ReturnType<typeof getEpic>; expanded: boolean; onToggle: () => void; canAddStory: boolean; nav: Nav }) {
+  if (!epic) return null
+  const stories = storiesForEpic(epic.id)
+  return (
+    <CardShell className="p-3">
+      <div className="cursor-pointer" onClick={onToggle}>
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <span className="text-[12px] font-medium text-[#1A1A1A] leading-snug">{epic.title}</span>
+          <HealthBadge health={epicHealth(epic)} />
+        </div>
+        <ProgressBar pct={epicPct(epic)} thin health={epicHealth(epic)} />
+        <div className="flex items-center justify-between mt-2 text-[10px] text-[#BBBBBB]">
+          <span>{epic.assignee}</span>
+          <span>{stories.length} stor{stories.length === 1 ? 'y' : 'ies'} {expanded ? '▾' : '▸'}</span>
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-[#F0F0F0] flex flex-col gap-2">
+          {stories.length === 0 && <p className="text-[10.5px] text-[#CCCCCC] italic">No stories yet.</p>}
+          {stories.map(story => <StoryRow key={story.id} story={story} />)}
+          {canAddStory && (
+            <button onClick={e => { e.stopPropagation(); nav('create-story', epic.id) }} className="text-[10.5px] text-[#4F46E5] hover:underline text-left mt-1">+ Add Story</button>
+          )}
+        </div>
+      )}
+    </CardShell>
+  )
+}
+
+function StoryRow({ story }: { story: ReturnType<typeof getStory> }) {
+  const [adding, setAdding] = useState(false)
+  const [label, setLabel] = useState('')
+  const [date, setDate] = useState('')
+  if (!story) return null
+  const milestones = story.milestones ?? []
+  const submit = () => {
+    if (!label.trim() || !date) return
+    addMilestoneToStory(story.id, label.trim(), date, 'Alex Chen')
+    setLabel(''); setDate(''); setAdding(false)
+  }
+  return (
+    <div className="bg-[#FAFAFA] rounded-md p-2 border border-[#F0F0F0]" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <HealthBadge health={storyHealth(story)} />
+          <span className="text-[11px] text-[#333] truncate">{story.title}</span>
+        </div>
+        <span className="text-[10px] text-[#BBBBBB] flex-shrink-0">{story.points} pts</span>
+      </div>
+      {milestones.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {milestones.map(m => <Tag key={m.id} label={`${m.done ? '✓ ' : ''}${m.label}`} variant={m.done ? 'muted' : 'outline'} />)}
+        </div>
+      )}
+      {!adding && <button onClick={() => setAdding(true)} className="text-[10px] text-[#4F46E5] hover:underline mt-1.5">+ Add Milestone</button>}
+      {adding && (
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Milestone" className="flex-1 text-[10.5px] border border-[#E0E0E0] rounded px-2 py-1 outline-none focus:border-[#4F46E5]" />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="text-[10.5px] border border-[#E0E0E0] rounded px-1.5 py-1 outline-none focus:border-[#4F46E5]" />
+          <button onClick={submit} className="text-[10px] text-white bg-[#4F46E5] rounded px-2 py-1">Add</button>
+          <button onClick={() => setAdding(false)} className="text-[10px] text-[#999]">✕</button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -533,10 +856,13 @@ export function CreateInitiative({ nav, role }: { nav: Nav; role: Role }) {
     nav('initiative-detail', init.id)
   }
 
+  const backScreen = isLeadership ? 'backlog' : 'initiative-list'
+  const backLabel = isLeadership ? 'Backlog' : 'Initiatives'
+
   return (
     <WorkspaceShell title="New Initiative" subtitle="Title, business goal, target date and products are all that's required to get started — PM/Eng/QA leads and everything else below can be added later.">
       <div className="max-w-2xl">
-        <Breadcrumb items={[{ label: 'Initiatives', screen: 'initiative-list' }, { label: 'New Initiative' }]} onNavigate={s => nav(s)} />
+        <Breadcrumb items={[{ label: backLabel, screen: backScreen }, { label: 'New Initiative' }]} onNavigate={s => nav(s)} />
         <CardShell className="p-6">
           <div className="flex flex-col gap-5">
             <Field label="Initiative Title" required><input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Unified Authentication" className={inputCls} /></Field>
@@ -545,7 +871,7 @@ export function CreateInitiative({ nav, role }: { nav: Nav; role: Role }) {
               <Field label="Start Date" hint="When work actually kicks off — powers the Planning Calendar timeline."><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#333] bg-white outline-none focus:border-[#888] w-full" /></Field>
               <Field label="Target Date" required><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="border border-[#E0E0E0] rounded-md px-3 py-2.5 text-[13px] text-[#333] bg-white outline-none focus:border-[#888] w-full" /></Field>
             </div>
-            <Field label="Products" required hint="An initiative may span multiple products at once."><ProductCheckboxes selected={productIds} onToggle={toggle} /></Field>
+            <Field label="Products" required hint="An initiative may span multiple products at once."><ProductMultiSelect products={PRODUCTS} selected={productIds} onToggle={toggle} /></Field>
 
             <Divider />
             <p className="text-[11px] text-[#AAAAAA] font-medium uppercase tracking-wider">Optional — add later</p>
@@ -562,8 +888,8 @@ export function CreateInitiative({ nav, role }: { nav: Nav; role: Role }) {
             <Field label="Additional Context"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Background, constraints, or references…" className={textareaCls} /></Field>
 
             <div className="flex items-center gap-3 pt-2">
-              <Btn variant="primary" onClick={submit}>Save as Draft</Btn>
-              <Btn variant="ghost" onClick={() => nav('initiative-list')}>Cancel</Btn>
+              <Btn variant="primary" onClick={submit}>Save Initiative</Btn>
+              <Btn variant="ghost" onClick={() => nav(backScreen)}>Cancel</Btn>
             </div>
           </div>
         </CardShell>
@@ -1485,13 +1811,64 @@ export function CreateTestCase({ nav, storyId }: { nav: Nav; storyId?: string })
 // RELEASES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Generic "pick one, click Add, it appears below as a removable row" list —
+// replaces plain checkbox lists wherever a set of items needs to be built up
+// (Release scope, Create Release's Epics/Stories/Requirements). `options`
+// already excludes nothing; already-selected ids are filtered out of the
+// dropdown automatically so you can't add the same thing twice.
+function PickAddList({ label, hint, options, selectedIds, onAdd, onRemove, emptyLabel = 'None added yet.', allAddedLabel = "Everything's already added." }: {
+  label: string; hint?: string; options: { id: string; title: string }[]; selectedIds: string[]
+  onAdd: (id: string) => void; onRemove: (id: string) => void
+  emptyLabel?: string; allAddedLabel?: string
+}) {
+  const [pick, setPick] = useState('')
+  const available = options.filter(o => !selectedIds.includes(o.id))
+  const pickValue = available.some(o => o.id === pick) ? pick : (available[0]?.id ?? '')
+  const selected = selectedIds.map(id => options.find(o => o.id === id)).filter(Boolean) as { id: string; title: string }[]
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2 mb-2">
+        {available.length === 0 ? (
+          <p className="text-[11.5px] text-[#CCCCCC] italic py-1">{allAddedLabel}</p>
+        ) : (
+          <>
+            <select className={`${selectCls} flex-1`} value={pickValue} onChange={e => setPick(e.target.value)}>
+              {available.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
+            </select>
+            <Btn small variant="primary" onClick={() => { if (pickValue) { onAdd(pickValue); setPick('') } }}>+ Add</Btn>
+          </>
+        )}
+      </div>
+      {selected.length === 0 && <p className="text-[11px] text-[#CCCCCC] italic py-1">{emptyLabel}</p>}
+      {selected.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {selected.map(o => (
+            <div key={o.id} className="flex items-center justify-between gap-2 px-3 py-2 border border-[#F0F0F0] rounded-md">
+              <span className="text-[12.5px] text-[#333] truncate">{o.title}</span>
+              <button onClick={() => onRemove(o.id)} className="text-[10px] text-[#BBBBBB] hover:text-[#CC4444] flex-shrink-0">Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Field>
+  )
+}
+
+// No tabs — Gates lived in a tab nobody could answer "who enforces this"
+// about, and Activity/Comments split off from the page they actually
+// describe. Everything's on one scroll now: what's in scope (added through
+// one unified "+ Link" picker, not a separate add-button per kind), the
+// Requirements each bundled Initiative contributed (traceable to who added
+// it — see data.ts's rollupRequirementsForRelease), then Activity and
+// Comments together at the bottom.
 export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: Role }) {
-  const [tab, setTab] = useState<'overview' | 'epics' | 'gates' | 'activity' | 'comments'>('overview')
   const rel = getRelease(id) ?? RELEASES[0]
-  const epics = rel.epicIds.map(eid => getEpic(eid)).filter(Boolean)
-  const standaloneStories = (rel.storyIds ?? []).map(sid => getStory(sid)).filter(Boolean)
   const gatePct = releasePct(rel)
   const canGate = role === 'qa' || role === 'pm'
+  const canEditScope = role === 'pm'
+  const author = role === 'qa' ? 'Dana Rao' : 'Alex Chen'
+  const [linking, setLinking] = useState(false)
+  const [addingRequirement, setAddingRequirement] = useState(false)
 
   return (
     <WorkspaceShell
@@ -1506,94 +1883,164 @@ export function ReleaseDetail({ id, nav, role }: { id: string; nav: Nav; role: R
       }
       actions={canGate ? <><Btn small variant="outline">Request Fix</Btn><Btn variant={gatePct === 100 ? 'primary' : 'outline'} small onClick={gatePct === 100 ? () => approveRelease(rel.id) : undefined}>{gatePct === 100 ? 'Approve Release' : 'Release Blocked'}</Btn></> : undefined}
     >
-      <TabBar tabs={[
-        { id: 'overview', label: 'Overview' },
-        { id: 'epics', label: 'In Scope', count: epics.length + standaloneStories.length },
-        { id: 'gates', label: 'Gates', count: rel.gateChecks.length },
-        { id: 'activity', label: 'Activity' },
-        { id: 'comments', label: 'Comments', count: rel.comments.length },
-      ]} active={tab} onSelect={setTab} />
-
-      <div className="px-6 py-5">
-        {tab === 'overview' && (
-          <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-5 max-w-4xl">
-            <div className="flex flex-col gap-4">
-              <CardShell className="p-4">
-                <SectionLabel>Description</SectionLabel>
-                <p className="text-[13px] text-[#333] leading-relaxed">{rel.description}</p>
-              </CardShell>
-              <CardShell className="p-4"><SectionLabel>Attachments</SectionLabel><AttachmentList attachments={rel.attachments} /></CardShell>
-            </div>
-            <div className="flex flex-col gap-4">
-              <CardShell className="p-4">
-                <SectionLabel>Progress</SectionLabel>
-                <div className="text-center py-3">
-                  <ProgressLabel pct={gatePct} health={releaseHealth(rel)} className="text-[28px] font-bold text-[#1A1A1A] block" />
-                  <p className="text-[11px] text-[#AAAAAA]">Gate completion</p>
-                </div>
-                <ProgressBar pct={gatePct} health={releaseHealth(rel)} />
-                <Divider className="my-3" />
-                <DetailRow label="Target Date">{rel.targetDate}</DetailRow>
-                <DetailRow label="Gates Passed">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</DetailRow>
-              </CardShell>
-            </div>
-          </div>
-        )}
-
-        {tab === 'epics' && (
-          <div className="max-w-4xl flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              {epics.length === 0 && standaloneStories.length === 0 && <EmptyState icon="◇" title="Nothing in scope yet" />}
-              {epics.map(epic => (
-                <CardShell key={epic!.id} onClick={role === 'pm' ? () => nav('epic-detail', epic!.id) : undefined}>
-                  <div className="px-4 py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3"><span className="text-[12.5px] font-medium text-[#333]">{epic!.title}</span><StatusPair workflow={epic!.workflowState} health={epicHealth(epic!)} /></div>
-                    <span className="text-[11px] text-[#888]">{epicPct(epic!)}%</span>
-                  </div>
-                </CardShell>
-              ))}
-            </div>
-            {standaloneStories.length > 0 && (
-              <div>
-                <SectionLabel>Individual Stories (incremental — shipped without their whole epic)</SectionLabel>
-                <div className="flex flex-col gap-2 mt-2">
-                  {standaloneStories.map(story => (
-                    <CardShell key={story!.id} onClick={role === 'pm' ? () => nav('story-detail', story!.id) : undefined}>
-                      <div className="px-4 py-3 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3"><span className="text-[10px] font-mono text-[#CCCCCC]">{story!.id.toUpperCase()}</span><span className="text-[12.5px] font-medium text-[#333]">{story!.title}</span><StatusPair workflow={story!.workflowState} health={storyHealth(story!)} /></div>
-                        <span className="text-[11px] text-[#888]">{story!.points} pts</span>
-                      </div>
-                    </CardShell>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === 'gates' && (
-          <div className="max-w-2xl">
+      <div className="px-6 py-5 max-w-6xl flex flex-col gap-5">
+        <div className="grid grid-cols-[minmax(0,1fr)_280px] gap-5">
+          <div className="flex flex-col gap-4">
             <CardShell className="p-4">
-              <div className="flex items-center gap-2 mb-3"><ProgressBar pct={gatePct} health={releaseHealth(rel)} /><span className="text-[11px] text-[#888] flex-shrink-0">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</span></div>
-              {rel.gateChecks.map((gate, i) => (
-                <div
-                  key={i}
-                  onClick={canGate ? () => toggleGateCheck(rel.id, i) : undefined}
-                  className={`flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0 ${canGate ? 'cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4' : ''}`}
-                >
-                  <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#4F46E5]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
-                  <div><p className={`text-[12px] ${gate.passed ? 'text-[#888] line-through' : 'text-[#333]'}`}>{gate.label}</p>{gate.note && <p className="text-[10px] text-[#CC4444] mt-0.5">⚠ {gate.note}</p>}</div>
-                </div>
-              ))}
-              {canGate && <p className="text-[10.5px] text-[#BBBBBB] mt-2">Click a gate to toggle it passed/open.</p>}
+              <SectionLabel>Description</SectionLabel>
+              <p className="text-[13px] text-[#333] leading-relaxed">{rel.description}</p>
+            </CardShell>
+
+            <CardShell className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <SectionLabel>In Scope</SectionLabel>
+                {canEditScope && <button onClick={() => setLinking(true)} className="text-[11px] text-[#4F46E5] hover:underline">+ Link</button>}
+              </div>
+              <p className="text-[10.5px] text-[#BBBBBB] -mt-1 mb-3">Epics, stories, tasks and whole initiatives can all ride in the same release — link any of them from one place.</p>
+              <div className="flex flex-col gap-4">
+                <ScopeGroup label="Epics" kind="epic" ids={rel.epicIds} canEdit={canEditScope} onRemove={eid => removeFromRelease(rel.id, 'epic', eid)} nav={nav} navScreen={role === 'pm' ? 'epic-detail' : undefined} />
+                <ScopeGroup label="Stories" kind="story" ids={rel.storyIds} canEdit={canEditScope} onRemove={sid => removeFromRelease(rel.id, 'story', sid)} nav={nav} navScreen={role === 'pm' ? 'story-detail' : undefined} />
+                <ScopeGroup label="Tasks" kind="task" ids={rel.taskIds} canEdit={canEditScope} onRemove={tid => removeFromRelease(rel.id, 'task', tid)} nav={nav} navScreen={role === 'pm' ? 'task-detail' : undefined} />
+                <ScopeGroup label="Initiatives" kind="initiative" ids={rel.initiativeIds} canEdit={canEditScope} onRemove={iid => removeFromRelease(rel.id, 'initiative', iid)} nav={nav} navScreen={role === 'pm' ? 'initiative-detail' : undefined} />
+              </div>
+            </CardShell>
+
+            <CardShell className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <SectionLabel>Requirements</SectionLabel>
+                {canEditScope && <button onClick={() => setAddingRequirement(v => !v)} className="text-[11px] text-[#4F46E5] hover:underline">+ Add Requirement</button>}
+              </div>
+              <p className="text-[10.5px] text-[#BBBBBB] -mt-1 mb-2">What has to be true before this release can ship — each one is either added here directly or rolled up automatically from a bundled Initiative's own requirements. Approve Release is blocked until every one is passed.</p>
+              {addingRequirement && <AddReleaseRequirementForm releaseId={rel.id} author={author} onDone={() => setAddingRequirement(false)} />}
+              <div className="flex items-center gap-2 mb-2"><ProgressBar pct={gatePct} health={releaseHealth(rel)} /><span className="text-[11px] text-[#888] flex-shrink-0">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length}</span></div>
+              {rel.gateChecks.length === 0 && <p className="text-[11.5px] text-[#CCCCCC] italic py-2">No requirements set.</p>}
+              {rel.gateChecks.map((gate, i) => {
+                const source = gate.sourceInitiativeId ? getInitiative(gate.sourceInitiativeId) : undefined
+                return (
+                  <div key={gate.id} className={`flex items-start gap-2.5 py-3 border-b border-[#F5F5F5] last:border-0 ${canGate ? 'cursor-pointer hover:bg-[#FAFAFA] -mx-4 px-4' : ''}`}
+                    onClick={canGate ? () => toggleGateCheck(rel.id, i, author) : undefined}>
+                    <div className={`w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center ${gate.passed ? 'bg-[#4F46E5]' : 'border border-[#D8D8D8]'}`}>{gate.passed && <span className="text-white text-[9px]">✓</span>}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[12px] ${gate.passed ? 'text-[#888] line-through' : 'text-[#333]'}`}>{gate.label}</p>
+                      <p className="text-[10px] text-[#BBBBBB] mt-0.5">
+                        {source ? <>from <span className="text-[#666]">{source.title}</span> · added by {gate.addedBy}</> : <>added by {gate.addedBy} · {gate.addedAt}</>}
+                        {gate.passed && gate.checkedBy && <> · passed by {gate.checkedBy}</>}
+                      </p>
+                      {gate.note && <p className="text-[10px] text-[#CC4444] mt-0.5">⚠ {gate.note}</p>}
+                    </div>
+                    {canEditScope && !gate.sourceInitiativeId && (
+                      <button onClick={e => { e.stopPropagation(); removeRequirementFromRelease(rel.id, gate.id) }} className="text-[10px] text-[#BBBBBB] hover:text-[#CC4444] flex-shrink-0">Remove</button>
+                    )}
+                  </div>
+                )
+              })}
+              {canGate && rel.gateChecks.length > 0 && <p className="text-[10.5px] text-[#BBBBBB] mt-2">Click a requirement to toggle it passed/open.</p>}
+            </CardShell>
+
+            <CardShell className="p-4"><SectionLabel>Attachments</SectionLabel><AttachmentList attachments={rel.attachments} /></CardShell>
+
+            <CardShell className="p-4"><SectionLabel>Activity</SectionLabel><ActivityTimeline items={rel.activity} /></CardShell>
+            <CardShell className="p-4"><SectionLabel>Comments</SectionLabel><CommentThread comments={rel.comments} /></CardShell>
+          </div>
+          <div className="flex flex-col gap-4">
+            <CardShell className="p-4">
+              <SectionLabel>Progress</SectionLabel>
+              <div className="text-center py-3">
+                <ProgressLabel pct={gatePct} health={releaseHealth(rel)} className="text-[28px] font-bold text-[#1A1A1A] block" />
+                <p className="text-[11px] text-[#AAAAAA]">Requirements passed</p>
+              </div>
+              <ProgressBar pct={gatePct} health={releaseHealth(rel)} />
+              <Divider className="my-3" />
+              <DetailRow label="Target Date">{rel.targetDate}</DetailRow>
+              <DetailRow label="Requirements">{rel.gateChecks.filter(g => g.passed).length}/{rel.gateChecks.length} passed</DetailRow>
+              <DetailRow label="In Scope">{rel.epicIds.length + rel.storyIds.length + rel.taskIds.length + rel.initiativeIds.length} items</DetailRow>
             </CardShell>
           </div>
-        )}
-
-        {tab === 'activity' && <div className="max-w-2xl"><CardShell className="p-5"><ActivityTimeline items={rel.activity} /></CardShell></div>}
-        {tab === 'comments' && <div className="max-w-2xl"><CardShell className="p-5"><CommentThread comments={rel.comments} /></CardShell></div>}
+        </div>
       </div>
+
+      {linking && <LinkToReleaseModal rel={rel} onClose={() => setLinking(false)} />}
     </WorkspaceShell>
+  )
+}
+
+function ScopeGroup({ label, kind, ids, canEdit, onRemove, nav, navScreen }: {
+  label: string; kind: 'epic' | 'story' | 'task' | 'initiative'; ids: string[]; canEdit: boolean
+  onRemove: (id: string) => void; nav: Nav; navScreen?: string
+}) {
+  const getters = { epic: getEpic, story: getStory, task: getTask, initiative: getInitiative } as const
+  const healths = { epic: epicHealth, story: storyHealth, task: taskHealth, initiative: initiativeHealth } as const
+  const items = ids.map(id => getters[kind](id)).filter(Boolean) as { id: string; title: string; workflowState: WorkflowState }[]
+  return (
+    <div>
+      <div className="mb-1.5">
+        <span className="text-[10.5px] font-semibold text-[#888] uppercase tracking-wider">{label} ({items.length})</span>
+      </div>
+      {items.length === 0 && <p className="text-[11px] text-[#CCCCCC] italic py-1.5">None yet.</p>}
+      <div className="flex flex-col gap-1.5">
+        {items.map(item => (
+          <div key={item.id} className={`flex items-center justify-between gap-2 px-3 py-2 border border-[#F0F0F0] rounded-md ${navScreen ? 'cursor-pointer hover:bg-[#FAFAFA]' : ''}`}
+            onClick={navScreen ? () => nav(navScreen, item.id) : undefined}>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[12px] text-[#333] truncate">{item.title}</span>
+              <StatusPair workflow={item.workflowState} health={(healths[kind] as (x: typeof item) => ReturnType<typeof epicHealth>)(item)} />
+            </div>
+            {canEdit && <button onClick={e => { e.stopPropagation(); onRemove(item.id) }} className="text-[10px] text-[#BBBBBB] hover:text-[#CC4444] flex-shrink-0">Remove</button>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// One picker for all four kinds — pick a type, pick an item, hit Add. Replaces
+// the four separate per-kind "+ Add" links that used to live on each ScopeGroup.
+const RELEASE_LINK_KINDS: { value: 'epic' | 'story' | 'task' | 'initiative'; label: string; plural: string }[] = [
+  { value: 'epic', label: 'Epic', plural: 'Epics' },
+  { value: 'story', label: 'Story', plural: 'Stories' },
+  { value: 'task', label: 'Task', plural: 'Tasks' },
+  { value: 'initiative', label: 'Initiative', plural: 'Initiatives' },
+]
+
+function LinkToReleaseModal({ rel, onClose }: { rel: Release; onClose: () => void }) {
+  const [kind, setKind] = useState<'epic' | 'story' | 'task' | 'initiative'>('epic')
+  const allFor = { epic: EPICS, story: STORIES, task: TASKS, initiative: INITIATIVES } as const
+  const idsFor = { epic: rel.epicIds, story: rel.storyIds, task: rel.taskIds, initiative: rel.initiativeIds } as const
+  return (
+    <Modal title="Link Item to Release" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Type">
+          <select className={selectCls} value={kind} onChange={e => setKind(e.target.value as typeof kind)}>
+            {RELEASE_LINK_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>
+        </Field>
+        <PickAddList
+          label={RELEASE_LINK_KINDS.find(k => k.value === kind)!.plural + ' in this release'}
+          options={allFor[kind]}
+          selectedIds={idsFor[kind]}
+          onAdd={itemId => addToRelease(rel.id, kind, itemId)}
+          onRemove={itemId => removeFromRelease(rel.id, kind, itemId)}
+          emptyLabel="None linked yet."
+        />
+      </div>
+      <div className="flex justify-end pt-3 mt-2 border-t border-[#F0F0F0]"><Btn onClick={onClose}>Done</Btn></div>
+    </Modal>
+  )
+}
+
+function AddReleaseRequirementForm({ releaseId, author, onDone }: { releaseId: string; author: string; onDone: () => void }) {
+  const [label, setLabel] = useState('')
+  const submit = () => {
+    if (!label.trim()) return
+    addRequirementToRelease(releaseId, label.trim(), author)
+    onDone()
+  }
+  return (
+    <div className="flex items-center gap-2 mb-3 p-3 bg-[#FAFAFA] rounded-md border border-[#F0F0F0]">
+      <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. App Store review submitted" className={`${inputCls} flex-1`} onKeyDown={e => e.key === 'Enter' && submit()} />
+      <Btn variant="primary" small onClick={submit}>Add</Btn>
+      <Btn small onClick={onDone}>Cancel</Btn>
+    </div>
   )
 }
 
@@ -1603,9 +2050,10 @@ export function CreateRelease({ nav }: { nav: Nav }) {
   const [description, setDescription] = useState('')
   const [epicIds, setEpicIds] = useState<string[]>([])
   const [storyIds, setStoryIds] = useState<string[]>([])
+  // Requirements start pre-filled with the standard checklist — Remove the
+  // ones that don't apply, or pick more back in from the dropdown.
   const [gateLabels, setGateLabels] = useState<string[]>(RELEASE_GATE_LABELS)
 
-  const toggle = (list: string[], set: (v: string[]) => void, id: string) => set(list.includes(id) ? list.filter(x => x !== id) : [...list, id])
   // Stories already covered by a selected epic don't need to be picked
   // individually — this list is for incremental, epic-less releases only.
   const uncoveredStories = STORIES.filter(s => !epicIds.includes(s.epicId))
@@ -1617,40 +2065,23 @@ export function CreateRelease({ nav }: { nav: Nav }) {
   }
 
   return (
-    <WorkspaceShell title="New Release" subtitle="Group epics — and, for incremental ships, individual stories — into a gated release.">
+    <WorkspaceShell title="New Release" subtitle="Group epics and, for incremental ships, individual stories — Tasks and whole Initiatives can be bundled in afterward from the release's own page.">
       <div className="max-w-2xl">
         <CardShell className="p-6">
           <div className="flex flex-col gap-4">
             <Field label="Release Name" required><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. v2.5.0" className={inputCls} /></Field>
             <Field label="Target Date" required><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className={selectCls} /></Field>
             <Field label="Description"><textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className={textareaCls} /></Field>
-            <Field label="Epics in Scope">
-              <div className="flex flex-col gap-1.5">
-                {EPICS.map(e => (
-                  <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
-                    <input type="checkbox" checked={epicIds.includes(e.id)} onChange={() => toggle(epicIds, setEpicIds, e.id)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{e.title}</span>
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="Individual Stories (optional)" hint="For shipping a story incrementally, without waiting for its whole epic.">
-              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
-                {uncoveredStories.map(s => (
-                  <label key={s.id} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
-                    <input type="checkbox" checked={storyIds.includes(s.id)} onChange={() => toggle(storyIds, setStoryIds, s.id)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{s.title}</span>
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="Gate Checks" hint="Which checks does this release need to clear? Each stays a manual sign-off, not an automated check.">
-              <div className="flex flex-col gap-1.5">
-                {RELEASE_GATE_LABELS.map(label => (
-                  <label key={label} className="flex items-center gap-2.5 px-3 py-2 border border-[#E0E0E0] rounded-md cursor-pointer hover:bg-[#FAFAFA]">
-                    <input type="checkbox" checked={gateLabels.includes(label)} onChange={() => toggle(gateLabels, setGateLabels, label)} className="accent-[#1A1A1A]" /><span className="text-[12.5px] text-[#333]">{label}</span>
-                  </label>
-                ))}
-              </div>
-            </Field>
+            <PickAddList label="Epics in Scope" options={EPICS} selectedIds={epicIds}
+              onAdd={id => setEpicIds(v => [...v, id])} onRemove={id => setEpicIds(v => v.filter(x => x !== id))}
+              emptyLabel="No epics added yet." />
+            <PickAddList label="Individual Stories (optional)" hint="For shipping a story incrementally, without waiting for its whole epic." options={uncoveredStories} selectedIds={storyIds}
+              onAdd={id => setStoryIds(v => [...v, id])} onRemove={id => setStoryIds(v => v.filter(x => x !== id))}
+              emptyLabel="No individual stories added." />
+            <PickAddList label="Requirements" hint="What has to be true before this release can ship — a manual sign-off, not an automated check. More can be added later, and any Initiative bundled in afterward contributes its own automatically."
+              options={RELEASE_GATE_LABELS.map(l => ({ id: l, title: l }))} selectedIds={gateLabels}
+              onAdd={id => setGateLabels(v => [...v, id])} onRemove={id => setGateLabels(v => v.filter(x => x !== id))}
+              emptyLabel="No requirements set." />
             <div className="flex items-center gap-3 pt-1">
               <Btn variant="primary" onClick={submit}>Create Release</Btn>
               <Btn variant="ghost" onClick={() => nav('release-list')}>Cancel</Btn>
